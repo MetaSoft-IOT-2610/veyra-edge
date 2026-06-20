@@ -53,16 +53,16 @@ class MeasurementCloudGateway:
         try:
             response = requests.post(url, json=payload, timeout=self.timeout)
         except requests.RequestException as exc:
-            LOGGER.warning("Cloud sync failed for device %s: %s", measurement.mac_address, exc)
+            LOGGER.warning("Cloud sync failed for device %s: %s", measurement.device_id, exc)
             return False
 
         if response.ok:
-            LOGGER.info("Synced measurement for device %s to cloud", measurement.mac_address)
+            LOGGER.info("Synced measurement for device %s to cloud", measurement.device_id)
             return True
 
         LOGGER.warning(
             "Cloud rejected measurement for device %s: %s %s",
-            measurement.mac_address, response.status_code, response.text,
+            measurement.device_id, response.status_code, response.text,
         )
         return False
 
@@ -70,19 +70,38 @@ class MeasurementCloudGateway:
     def _to_payload(measurement: Measurement) -> dict:
         """Translate a measurement into the backend's camelCase JSON contract.
 
-        Blood pressure is nested to match the backend ``BloodPressure`` value
-        object and is omitted entirely when not reported.
+        Identity: ``deviceId`` / ``deviceType`` identify the IoT node; an optional
+        ``gateway`` block identifies the edge server that forwarded the reading.
+        Nursing-home and resident correlation is resolved by the backend.
         """
         timestamp = measurement.timestamp
         payload = {
-            "deviceId": measurement.mac_address,
-            "nursingHomeId": measurement.nursing_home_id,
+            "deviceId": measurement.device_id,
+            "deviceType": measurement.device_type,
             "timestamp": timestamp.isoformat() if hasattr(timestamp, "isoformat") else timestamp,
             "heartRate": measurement.heart_rate,
             "temperature": measurement.temperature,
             "oxygenSaturation": measurement.oxygen_saturation,
             "respiratoryRate": measurement.respiratory_rate,
+            "ambientTemperature": measurement.ambient_temperature,
         }
+        gateway_id = EdgeConfig.GATEWAY_DEVICE_ID.strip()
+        if gateway_id:
+            payload["gateway"] = {
+                "deviceId": gateway_id,
+                "deviceType": EdgeConfig.GATEWAY_DEVICE_TYPE,
+            }
+        if measurement.latitude is not None and measurement.longitude is not None:
+            payload["location"] = {
+                "latitude": measurement.latitude,
+                "longitude": measurement.longitude,
+            }
+        if measurement.satellite_count is not None:
+            payload["satelliteCount"] = measurement.satellite_count
+        if measurement.satellites_in_view is not None:
+            payload["satellitesInView"] = measurement.satellites_in_view
+        if measurement.diagnostics is not None:
+            payload["diagnostics"] = measurement.diagnostics
         if measurement.systolic is not None and measurement.diastolic is not None:
             payload["bloodPressure"] = {
                 "systolic": measurement.systolic,

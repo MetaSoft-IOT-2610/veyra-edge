@@ -1,0 +1,9 @@
+{
+  "nodes": [
+    {
+      "device_id": "band-001",
+      "api_key": "your-api-key",
+      "device_type": "VITAL_SIGNS"
+    }
+  ]
+}

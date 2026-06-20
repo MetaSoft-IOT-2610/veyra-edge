@@ -7,11 +7,7 @@ status codes without leaking persistence or framework details.
 
 
 class DeviceAlreadyExistsError(Exception):
-    """Raised when registering a device whose identity already exists.
-
-    Signals a conflict against the uniqueness invariant of either
-    ``device_id`` or ``mac_address`` within the edge device registry.
-    """
+    """Raised when registering a device whose ``device_id`` already exists."""
 
 
 class DeviceNotFoundError(Exception):

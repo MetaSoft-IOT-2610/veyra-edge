@@ -1,9 +1,9 @@
 """Bootstrap the IAM device registry from a local node seed file.
 
 On edge start-up, reads a JSON list of nodes and registers
-any that are not yet present in SQLite.  This mirrors flashing ``DEVICE_ID`` +
-``API_KEY`` on embedded devices: the edge gets a matching allow-list without
-requiring a manual ``POST /api/v1/devices`` for each node in local development.
+any that are not yet present in SQLite.  Each node is identified by
+``device_id`` and ``mac_address`` — the MAC is read at runtime by the ESP32 and
+is not flashed as a secret on the device.
 
 The seed file is optional.  When absent or disabled via ``NODE_SEED_ENABLED``,
 this module is a no-op.
@@ -21,7 +21,7 @@ from shared.infrastructure.database import db
 
 logger = logging.getLogger(__name__)
 
-_REQUIRED_FIELDS = ("device_id", "api_key", "device_type")
+_REQUIRED_FIELDS = ("device_id", "mac_address", "device_type")
 
 
 def _load_nodes(path: str) -> list[dict[str, Any]]:
@@ -90,7 +90,7 @@ def seed_registered_nodes() -> None:
                 device_service.register_device(
                     device_id=device_id,
                     device_type=node["device_type"],
-                    api_key=str(node["api_key"]),
+                    mac_address=str(node["mac_address"]),
                 )
                 created += 1
                 logger.info("Seeded node '%s' from %s", device_id, path)

@@ -17,7 +17,6 @@ Typical usage::
 """
 from dotenv import load_dotenv
 
-# Load .env before importing modules that read configuration at import time.
 load_dotenv(override=True)
 
 import logging  # noqa: E402
@@ -31,8 +30,13 @@ from flask import Flask  # noqa: E402 (import after dotenv on purpose)
 
 from iam.interfaces.services import iam_api  # noqa: E402
 from monitoring.interfaces.services import monitoring_api  # noqa: E402
+from shared.infrastructure.config import EdgeConfig  # noqa: E402
 from shared.infrastructure.database import init_db  # noqa: E402
 from shared.infrastructure.node_seed import seed_registered_nodes  # noqa: E402
+from shared.infrastructure.registry_sync_scheduler import (  # noqa: E402
+    maybe_sync_registry_from_cloud,
+    sync_registry_from_cloud_on_startup,
+)
 
 app = Flask(__name__)
 app.register_blueprint(iam_api)
@@ -42,29 +46,22 @@ first_request = True
 
 
 def bootstrap() -> None:
-    """Create tables and seed test nodes (idempotent)."""
+    """Create tables and populate the local device registry."""
     init_db()
-    seed_registered_nodes()
+    if EdgeConfig.REGISTRY_SYNC_ENABLED:
+        sync_registry_from_cloud_on_startup()
+    elif EdgeConfig.NODE_SEED_ENABLED:
+        seed_registered_nodes()
 
 
 @app.before_request
 def setup():
-    """Initialize the database on the very first request.
-
-    Uses a module-level flag (``first_request``) to ensure this one-time setup
-    runs only once for the lifetime of the process.  Subsequent requests bypass
-    this function entirely.
-
-    Side effects:
-        - Creates the configured SQLite database file if absent.
-        - Creates the ``devices`` and ``measurements`` tables if they do not
-          exist yet (``safe=True``).
-        - Registers nodes from the optional seed file (``nodes.seed.json``).
-    """
+    """Initialize the database once, then keep the registry mirror fresh."""
     global first_request
     if first_request:
         first_request = False
         bootstrap()
+    maybe_sync_registry_from_cloud()
 
 
 if __name__ == "__main__":

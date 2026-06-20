@@ -16,8 +16,13 @@ The variables mirror the deployment contract documented for the Edge Server:
 - ``NODE_SEED_PATH``: JSON file listing nodes to register on start-up.
 - ``NODE_SEED_ENABLED``: toggle automatic node seeding (`true`/`false`).
 - ``GATEWAY_DEVICE_ID``: stable identifier of this edge server at the cloud backend.
-- ``GATEWAY_API_KEY``: secret API key paired with ``GATEWAY_DEVICE_ID`` for cloud auth.
+- ``GATEWAY_MAC_ADDRESS``: optional override for the gateway MAC sent in ``X-API-Key``.
+  When empty, the edge reads the primary host network interface MAC at runtime.
 - ``GATEWAY_DEVICE_TYPE``: device category for the edge gateway (default ``EDGE_GATEWAY``).
+- ``EDGE_JWT_SECRET``: signing secret for edge-issued device access tokens.
+- ``EDGE_JWT_TTL_SECONDS``: lifetime (seconds) of device access tokens after sign-in.
+- ``REGISTRY_SYNC_ENABLED``: pull the device registry from the cloud (source of truth).
+- ``REGISTRY_SYNC_INTERVAL_SECONDS``: interval between background registry sync polls.
 """
 import os
 
@@ -51,5 +56,9 @@ class EdgeConfig:
     )
     NODE_SEED_ENABLED: bool = os.getenv("NODE_SEED_ENABLED", "true").lower() == "true"
     GATEWAY_DEVICE_ID: str = os.getenv("GATEWAY_DEVICE_ID", "")
-    GATEWAY_API_KEY: str = os.getenv("GATEWAY_API_KEY", "")
+    GATEWAY_MAC_ADDRESS: str = os.getenv("GATEWAY_MAC_ADDRESS", "")
     GATEWAY_DEVICE_TYPE: str = os.getenv("GATEWAY_DEVICE_TYPE", "EDGE_GATEWAY")
+    EDGE_JWT_SECRET: str = os.getenv("EDGE_JWT_SECRET", "")
+    EDGE_JWT_TTL_SECONDS: int = int(os.getenv("EDGE_JWT_TTL_SECONDS", "3600"))
+    REGISTRY_SYNC_ENABLED: bool = os.getenv("REGISTRY_SYNC_ENABLED", "false").lower() == "true"
+    REGISTRY_SYNC_INTERVAL_SECONDS: int = int(os.getenv("REGISTRY_SYNC_INTERVAL_SECONDS", "300"))

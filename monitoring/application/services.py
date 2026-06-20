@@ -7,6 +7,7 @@ repositories and outbound gateways without containing domain logic themselves.
 import logging
 
 from iam.domain.entities import Device
+from iam.infrastructure.repositories import DeviceRepository
 from monitoring.domain.entities import Measurement
 from monitoring.domain.services import MeasurementService
 from monitoring.infrastructure.cloud_sync import MeasurementCloudGateway
@@ -29,13 +30,15 @@ class MeasurementApplicationService:
        :class:`~monitoring.infrastructure.repositories.MeasurementRepository`.
     4. Cloud synchronization – publishes through
        :class:`~monitoring.infrastructure.cloud_sync.MeasurementCloudGateway`
-       using gateway registry identity (``device_id``, ``device_type``); nursing-home
-       and resident correlation is resolved by the cloud backend from ``deviceId``.
+       only when the node still exists as ``ACTIVE`` in the IAM registry
+       (``device_id`` + ``mac_address``); the cloud backend applies the same
+       check on ``deviceId`` + ``macAddress`` in the payload.
     """
 
     def __init__(self):
         """Initialise the service with its required collaborators."""
         self.measurement_repository = MeasurementRepository()
+        self.device_repository = DeviceRepository()
         self.measurement_service = MeasurementService()
         self.cloud_gateway = MeasurementCloudGateway()
 
@@ -104,7 +107,16 @@ class MeasurementApplicationService:
         """Attempt to publish a buffered measurement and flag it on success."""
         if not EdgeConfig.CLOUD_SYNC_ENABLED:
             return False
-        published = self.cloud_gateway.publish(measurement)
+
+        device = self.device_repository.find_by_device_id(measurement.device_id)
+        if not device:
+            LOGGER.warning(
+                "Cloud sync skipped for device %s: not in ACTIVE registry",
+                measurement.device_id,
+            )
+            return False
+
+        published = self.cloud_gateway.publish(measurement, device.mac_address)
         if published:
             self.measurement_repository.mark_as_synced(measurement.id)
             measurement.synced = True

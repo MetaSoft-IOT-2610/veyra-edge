@@ -2,7 +2,7 @@
   "nodes": [
     {
       "device_id": "band-001",
-      "api_key": "your-api-key",
+      "mac_address": "AA:BB:CC:DD:EE:FF",
       "device_type": "VITAL_SIGNS"
     }
   ]

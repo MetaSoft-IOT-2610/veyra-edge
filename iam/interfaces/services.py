@@ -1,24 +1,24 @@
 """Interface (REST API) layer for the IAM bounded context.
 
 Exposes a Flask Blueprint (``iam_api``) that lets the cloud backend provision
-the edge device registry, and a shared authentication helper
-(``authenticate_request``) used by other bounded contexts to guard telemetry
-ingestion.  This layer owns no domain logic; it handles HTTP request/response
-concerns and delegates to the application services.
+the edge device registry, and shared authentication helpers used by other
+bounded contexts to guard telemetry ingestion.
 """
 from flask import Blueprint, request, jsonify
 import logging
 
+from iam.application.registry_sync_service import DeviceRegistrySyncApplicationService
 from iam.application.services import AuthApplicationService, DeviceApplicationService
 from iam.domain.entities import Device
 from iam.domain.exceptions import DeviceAlreadyExistsError
+from shared.infrastructure.config import EdgeConfig
 
 iam_api = Blueprint("iam_api", __name__)
 logger = logging.getLogger(__name__)
 
-# Module-level singletons — instantiated once per worker process.
 device_service = DeviceApplicationService()
 auth_service = AuthApplicationService()
+registry_sync_service = DeviceRegistrySyncApplicationService()
 
 
 def _device_to_json(device: Device) -> dict:
@@ -27,6 +27,13 @@ def _device_to_json(device: Device) -> dict:
         "id": device.id,
         "device_id": device.device_id,
         "device_type": device.device_type,
+        "mac_address": device.mac_address,
+        "status": device.status,
+        "cloud_updated_at": (
+            device.cloud_updated_at.isoformat()
+            if device.cloud_updated_at and hasattr(device.cloud_updated_at, "isoformat")
+            else device.cloud_updated_at
+        ),
         "created_at": device.created_at.isoformat() if hasattr(device.created_at, "isoformat") else device.created_at,
         "updated_at": device.updated_at.isoformat() if hasattr(device.updated_at, "isoformat") else device.updated_at,
     }
@@ -42,56 +49,76 @@ def _read_device_id() -> str | None:
     return None
 
 
-def authenticate_request():
-    """Validate the device identity for an incoming telemetry request.
-
-    Reads ``X-Device-Id`` (preferred) or ``device_id`` in the JSON body, plus
-    ``X-API-Key``, and verifies the pair against the edge device registry.
-
-    Returns:
-        tuple[flask.Response, int] | None: ``(JSON, 401)`` on failure; ``None`` if ok.
-    """
-    device_id = _read_device_id()
-    api_key = request.headers.get("X-API-Key")
-    if not device_id or not api_key:
-        return jsonify({"error": "Missing X-Device-Id (or device_id) or X-API-Key"}), 401
-    if not auth_service.authenticate(device_id, api_key):
-        return jsonify({"error": "Invalid device_id or API key"}), 401
+def _read_mac_address() -> str | None:
+    """Read the MAC address from ``X-Device-Mac`` or the JSON body."""
+    mac_address = request.headers.get("X-Device-Mac")
+    if mac_address:
+        return mac_address.strip()
+    if request.json and request.json.get("mac_address"):
+        return str(request.json.get("mac_address")).strip()
     return None
+
+
+def _read_bearer_token() -> str | None:
+    """Read a Bearer access token from the ``Authorization`` header."""
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return None
+    token = auth_header[7:].strip()
+    return token or None
 
 
 def resolve_authenticated_device():
     """Return the IAM device for the current telemetry request.
 
-    Call after :func:`authenticate_request` succeeds (or call directly and
-    handle errors).  The returned :class:`~iam.domain.entities.Device` is the
-    gateway's source of truth for cloud identity (``device_type``, etc.).
+    Telemetry must include ``Authorization: Bearer <token>`` obtained from
+    :func:`sign_in`.
+    """
+    token = _read_bearer_token()
+    if not token:
+        logger.warning("Telemetry auth failed: missing Bearer access token")
+        return None, (jsonify({"error": "Missing or invalid Authorization Bearer token"}), 401)
 
-    Returns:
-        tuple[Device | None, tuple | None]: ``(device, None)`` on success;
-        ``(None, error_response)`` when credentials are missing or invalid.
+    device = auth_service.get_device_from_token(token)
+    if not device:
+        logger.warning("Telemetry auth failed: invalid or expired access token")
+        return None, (jsonify({"error": "Invalid or expired access token"}), 401)
+    return device, None
+
+
+@iam_api.route("/api/v1/auth/sign-in", methods=["POST"])
+def sign_in():
+    """Authenticate a device and issue a short-lived access token.
+
+    **Headers:** ``X-Device-Id``, ``X-Device-Mac``
+
+    **Responses:**
+
+    - ``200 OK`` – Sign-in succeeded; response includes ``access_token``.
+    - ``401 Unauthorized`` – Missing or invalid credentials; no token is returned.
+    - ``503 Service Unavailable`` – Token signing is not configured on the edge.
     """
     device_id = _read_device_id()
-    api_key = request.headers.get("X-API-Key")
-    if not device_id or not api_key:
-        logger.warning(
-            "Telemetry auth failed: missing credentials (device_id=%s, has_api_key=%s)",
-            device_id or "—",
-            bool(api_key),
-        )
-        return None, (jsonify({"error": "Missing X-Device-Id (or device_id) or X-API-Key"}), 401)
-    device = auth_service.get_device(device_id, api_key)
-    if not device:
-        logger.warning("Telemetry auth failed: invalid credentials for device_id=%s", device_id)
-        return None, (jsonify({"error": "Invalid device_id or API key"}), 401)
-    return device, None
+    mac_address = _read_mac_address()
+    if not device_id or not mac_address:
+        return jsonify({"error": "Missing X-Device-Id or X-Device-Mac"}), 401
+
+    if not EdgeConfig.EDGE_JWT_SECRET.strip():
+        logger.error("Device sign-in rejected: EDGE_JWT_SECRET is not configured")
+        return jsonify({"error": "Token signing is not configured on the edge server"}), 503
+
+    token_payload = auth_service.sign_in(device_id, mac_address)
+    if not token_payload:
+        logger.warning("Device sign-in failed for device_id=%s", device_id)
+        return jsonify({"error": "Invalid device_id or MAC address"}), 401
+
+    logger.info("Device sign-in succeeded for device_id=%s", device_id)
+    return jsonify(token_payload), 200
 
 
 @iam_api.route("/api/v1/devices", methods=["POST"])
 def register_device():
     """Register a node provisioned by the cloud backend.
-
-    Gateway identification uses ``device_id`` + ``api_key`` only.
 
     **Request body (JSON):**
 
@@ -99,22 +126,16 @@ def register_device():
 
         {
             "device_id": "band-001",
-            "api_key": "s3cr3t-key",
+            "mac_address": "AA:BB:CC:DD:EE:FF",
             "device_type": "VITAL_SIGNS"
         }
-
-    **Responses:**
-
-    - ``201 Created`` – Device registered successfully.
-    - ``400 Bad Request`` – Missing or invalid fields.
-    - ``409 Conflict`` – A device with the same ``device_id`` already exists.
     """
     data = request.json or {}
     try:
         device = device_service.register_device(
             device_id=data["device_id"],
             device_type=data["device_type"],
-            api_key=data["api_key"],
+            mac_address=data["mac_address"],
         )
         return jsonify(_device_to_json(device)), 201
     except KeyError:
@@ -123,6 +144,22 @@ def register_device():
         return jsonify({"error": str(e)}), 409
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
+
+
+@iam_api.route("/api/v1/devices/sync-from-cloud", methods=["POST"])
+def sync_devices_from_cloud():
+    """Pull the latest device registry from the cloud (manual / observability).
+
+    Requires ``REGISTRY_SYNC_ENABLED=true`` and valid gateway credentials in ``.env``.
+    """
+    if not EdgeConfig.REGISTRY_SYNC_ENABLED:
+        return jsonify({"error": "Registry sync is disabled on this edge server"}), 503
+
+    applied = registry_sync_service.sync_from_cloud()
+    if applied == 0 and not EdgeConfig.GATEWAY_DEVICE_ID.strip():
+        return jsonify({"error": "Gateway credentials are not configured"}), 503
+
+    return jsonify({"applied": applied}), 200
 
 
 @iam_api.route("/api/v1/devices", methods=["GET"])

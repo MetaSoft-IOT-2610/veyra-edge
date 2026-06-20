@@ -6,7 +6,7 @@ repositories and outbound gateways without containing domain logic themselves.
 """
 import logging
 
-from iam.infrastructure.repositories import DeviceRepository
+from iam.domain.entities import Device
 from monitoring.domain.entities import Measurement
 from monitoring.domain.services import MeasurementService
 from monitoring.infrastructure.cloud_sync import MeasurementCloudGateway
@@ -21,47 +21,46 @@ class MeasurementApplicationService:
 
     Responsibilities:
 
-    1. Cross-context validation – delegates to the IAM
-       :class:`~iam.infrastructure.repositories.DeviceRepository` to verify the
-       requesting device is registered and its API key is valid, and to obtain
-       the tenant (``nursing_home_id``) the reading belongs to.
+    1. Cross-context validation – the IAM :class:`~iam.domain.entities.Device`
+       passed in was already authenticated at the interface layer.
     2. Domain logic – delegates to
-       :class:`~monitoring.domain.services.MeasurementService` to validate the
-       raw vitals and build a :class:`~monitoring.domain.entities.Measurement`.
-    3. Local buffering – persists the reading via
+       :class:`~monitoring.domain.services.MeasurementService` to validate vitals.
+    3. Local buffering – persists via
        :class:`~monitoring.infrastructure.repositories.MeasurementRepository`.
-    4. Cloud synchronization – attempts to publish the reading through
-       :class:`~monitoring.infrastructure.cloud_sync.MeasurementCloudGateway`;
-       on failure the reading stays buffered (``synced = False``) for later
-       retry.
+    4. Cloud synchronization – publishes through
+       :class:`~monitoring.infrastructure.cloud_sync.MeasurementCloudGateway`
+       using gateway registry identity (``device_id``, ``device_type``); nursing-home
+       and resident correlation is resolved by the cloud backend from ``deviceId``.
     """
 
     def __init__(self):
         """Initialise the service with its required collaborators."""
         self.measurement_repository = MeasurementRepository()
         self.measurement_service = MeasurementService()
-        self.device_repository = DeviceRepository()
         self.cloud_gateway = MeasurementCloudGateway()
 
     def create_measurement(
             self,
-            mac_address: str,
-            api_key: str,
+            device: Device,
             heart_rate=None,
             systolic=None,
             diastolic=None,
             temperature=None,
             oxygen_saturation=None,
             respiratory_rate=None,
-            timestamp=None) -> Measurement:
+            timestamp=None,
+            ambient_temperature=None,
+            latitude=None,
+            longitude=None,
+            satellite_count=None,
+            satellites_in_view=None,
+            diagnostics=None) -> Measurement:
         """Execute the *ingest measurement* use-case.
 
         Args:
-            mac_address (str): Hardware MAC address of the submitting device.
-            api_key (str): Value of the ``X-API-Key`` header used to authenticate.
+            device (Device): Authenticated node from the IAM registry.
             heart_rate, systolic, diastolic, temperature, oxygen_saturation,
-            respiratory_rate: Optional raw vitals forwarded to the domain
-                service for validation.
+            respiratory_rate: Optional raw vitals from the embedded device.
             timestamp (str | None): ISO 8601 timestamp of the reading.
 
         Returns:
@@ -69,16 +68,24 @@ class MeasurementApplicationService:
             whether cloud publication succeeded.
 
         Raises:
-            ValueError: If the device is unknown or the vitals are invalid.
+            ValueError: If the vitals are invalid.
         """
-        # Cross-context guard: verify device identity via the IAM repository.
-        device = self.device_repository.find_by_mac_and_api_key(mac_address, api_key)
-        if not device:
-            raise ValueError("Device not found")
-
         measurement = self.measurement_service.create_measurement(
-            device, heart_rate, systolic, diastolic,
-            temperature, oxygen_saturation, respiratory_rate, timestamp,
+            device.device_id,
+            device.device_type,
+            heart_rate,
+            systolic,
+            diastolic,
+            temperature,
+            oxygen_saturation,
+            respiratory_rate,
+            ambient_temperature,
+            latitude,
+            longitude,
+            satellite_count,
+            satellites_in_view,
+            timestamp,
+            diagnostics,
         )
         saved = self.measurement_repository.save(measurement)
 
@@ -86,13 +93,7 @@ class MeasurementApplicationService:
         return saved
 
     def sync_pending(self) -> int:
-        """Replay every buffered measurement that has not yet reached the cloud.
-
-        Intended to be triggered periodically or after connectivity is restored.
-
-        Returns:
-            int: The number of measurements successfully synced in this run.
-        """
+        """Replay every buffered measurement that has not yet reached the cloud."""
         synced_count = 0
         for measurement in self.measurement_repository.find_unsynced():
             if self._try_sync(measurement):

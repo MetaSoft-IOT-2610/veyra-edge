@@ -1,5 +1,8 @@
 # Veyra Edge Service
 
+**Version**: 0.2.0  
+**Date**: June 2026
+
 `veyra_edge_service` is the IoT edge application that runs on an on-premise Edge
 Server inside each nursing home. It bridges the embedded IoT devices (vital
 signs band) and the Veyra cloud backend, following a Domain-Driven Design (DDD)
@@ -25,8 +28,8 @@ Owns the local device registry that the backend provisions and the edge uses to
 authenticate telemetry.
 
 - **Core concept**: `Device`
-- **Responsibilities**: accept device registrations and MAC-address corrections
-  from the backend; authenticate device telemetry via `X-API-Key`.
+- **Responsibilities**: accept node registrations from the backend; authenticate
+  device telemetry via ``device_id`` + ``X-API-Key``.
 
 ### 2. Monitoring
 
@@ -83,8 +86,36 @@ python3 -m venv .venv
 source .venv/bin/activate         # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env              # adjust values
+cp nodes.seed.example.json nodes.seed.json   # local node allow-list
 python app.py
 ```
+
+### Node seed (local allow-list)
+
+On the first HTTP request the edge can register nodes from a JSON file — the
+server-side counterpart of flashing `DEVICE_ID` + `API_KEY` in `secrets.h` on
+the ESP32.
+
+```sh
+cp nodes.seed.example.json nodes.seed.json
+```
+
+Example entry (must match firmware credentials):
+
+```json
+{
+  "nodes": [
+    {
+      "device_id": "band-001",
+      "api_key": "your-api-key",
+      "device_type": "VITAL_SIGNS"
+    }
+  ]
+}
+```
+
+Seeding is idempotent: existing `device_id` values are skipped. Set
+`NODE_SEED_ENABLED=false` to disable, or point `NODE_SEED_PATH` at another file.
 
 ### Environment variables
 
@@ -92,43 +123,35 @@ python app.py
 |---|---|
 | `SQLITE_DB_PATH` | Local path of the SQLite buffering database |
 | `API_SYNC_URL` | Base URL of the cloud backend for telemetry sync |
-| `EDGE_DEVICE_PORT` | Serial/network port of the IoT device |
+| `EDGE_DEVICE_PORT` | Reserved for future serial ingestion (devices use HTTP today) |
 | `CLOUD_SYNC_ENABLED` | Toggle cloud synchronization (`true`/`false`) |
 | `CLOUD_SYNC_TIMEOUT` | HTTP timeout (seconds) for cloud sync |
+| `NODE_SEED_ENABLED` | Register nodes from seed file on start-up (`true`/`false`) |
+| `NODE_SEED_PATH` | Path to the JSON node seed file (default: `nodes.seed.json`) |
+| `GATEWAY_DEVICE_ID` | Cloud identifier of this edge server (enables `gateway` in sync payload) |
+| `GATEWAY_DEVICE_TYPE` | Device type for the edge server (default: `EDGE_GATEWAY`) |
 
 ## API Contract
 
 ### A. Backend → Edge — Device provisioning (IAM)
 
-#### Register a device
+#### Register a node
 
 `POST /api/v1/devices`
 
+Gateway identification uses **`device_id` + `api_key`** only.
+
 ```json
 {
-  "device_id": "12",
-  "mac_address": "AA:BB:CC:DD:EE:FF",
-  "nursing_home_id": 5,
-  "device_type": "VITAL_SIGNS",
-  "api_key": "s3cr3t-key"
+  "device_id": "band-001",
+  "api_key": "s3cr3t-key",
+  "device_type": "VITAL_SIGNS"
 }
 ```
 
-- `201 Created` — device registered.
+- `201 Created` — node registered.
 - `400 Bad Request` — missing/invalid fields.
-- `409 Conflict` — `device_id`/`mac_address` already registered.
-
-#### Correct a device's MAC address
-
-`PUT /api/v1/devices/<device_id>`
-
-```json
-{ "mac_address": "AA:BB:CC:DD:EE:01" }
-```
-
-- `200 OK` — device updated.
-- `404 Not Found` — unknown `device_id`.
-- `409 Conflict` — MAC already in use.
+- `409 Conflict` — `device_id` already registered.
 
 #### List devices (observability)
 
@@ -138,28 +161,41 @@ python app.py
 
 `POST /api/v1/monitoring/data-records`
 
-**Headers:** `Content-Type: application/json`, `X-API-Key: <device api key>`
+**Headers:** `Content-Type: application/json`, `X-Device-Id: <device id>`, `X-API-Key: <api key>`
 
 ```json
 {
-  "mac_address": "AA:BB:CC:DD:EE:FF",
   "timestamp": "2026-06-16T18:23:00-05:00",
   "heart_rate": 72,
-  "systolic": 120,
-  "diastolic": 80,
-  "temperature": 36.6,
   "oxygen_saturation": 98,
-  "respiratory_rate": 16
+  "temperature": 36.6
 }
 ```
+
+The body carries **sensor readings only**. The gateway resolves `device_type`
+from its IAM registry when syncing. Nursing-home and resident correlation is
+resolved by the **cloud backend** from `deviceId`.
 
 All vitals are optional; validation ranges match the backend value objects
 (heart rate 0–300, systolic 0–300, diastolic 0–200, systolic > diastolic,
 temperature 30.0–45.0 °C, oxygen saturation 0–100 %, respiratory rate 0–60).
 
 - `201 Created` — reading buffered (`synced` indicates cloud publication).
-- `400 Bad Request` — missing `mac_address` or invalid vitals.
-- `401 Unauthorized` — missing/invalid `mac_address` or `X-API-Key`.
+- `400 Bad Request` — invalid vitals.
+- `401 Unauthorized` — missing/invalid `X-Device-Id` (or legacy body `device_id`) or `X-API-Key`.
+
+### Device transport: HTTP (Wi-Fi)
+
+Embedded devices send identity via headers (`X-Device-Id`, `X-API-Key` from `secrets.h`).
+The gateway enriches each reading with registry metadata before cloud sync.
+
+**Local development checklist:**
+
+1. Copy `nodes.seed.example.json` → `nodes.seed.json` (or `POST /api/v1/devices`).
+2. Run the edge: `python app.py` (listens on `0.0.0.0:5000`).
+3. Flash the ESP32 with matching `DEVICE_ID` and `API_KEY` in `secrets.h`.
+
+> **Note:** Delete `veyra_edge.db` and restart if upgrading from an older schema.
 
 ## Cloud Sync Contract (Edge → Backend)
 
@@ -169,16 +205,24 @@ When `CLOUD_SYNC_ENABLED=true`, each buffered measurement is published to:
 
 ```json
 {
-  "deviceId": "AA:BB:CC:DD:EE:FF",
-  "nursingHomeId": 5,
+  "deviceId": "band-001",
+  "deviceType": "VITAL_SIGNS",
+  "gateway": {
+    "deviceId": "edge-local-001",
+    "deviceType": "EDGE_GATEWAY"
+  },
   "timestamp": "2026-06-16T23:23:00+00:00",
   "heartRate": 72,
-  "bloodPressure": { "systolic": 120, "diastolic": 80 },
   "temperature": 36.6,
   "oxygenSaturation": 98,
-  "respiratoryRate": 16
+  "diagnostics": { }
 }
 ```
+
+- **`deviceType`** on the node is always an IoT category (`VITAL_SIGNS` for bands).
+- **`gateway`** identifies the on-premise edge server (`EDGE_GATEWAY`), configured
+  once per deployment via `GATEWAY_DEVICE_ID` in `.env`.
+- The backend resolves nursing-home and resident assignment from `deviceId`.
 
 > [!NOTE]
 > The backend Tracking context exposes `POST /api/v1/measurements` to ingest the

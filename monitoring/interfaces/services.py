@@ -7,81 +7,86 @@ responsible solely for I/O concerns: parsing request data, authentication
 delegation, and HTTP status code selection.
 """
 from flask import Blueprint, request, jsonify
+import logging
 
-from iam.interfaces.services import authenticate_request
+from iam.interfaces.services import resolve_authenticated_device
 from monitoring.application.services import MeasurementApplicationService
 
 monitoring_api = Blueprint("monitoring_api", __name__)
+logger = logging.getLogger(__name__)
 
-# Module-level singleton; safe because Flask handles one request at a time
-# within a single worker (no shared mutable state on this object).
 measurement_service = MeasurementApplicationService()
+
+
+def _summarize_vitals(data: dict) -> str:
+    """Build a short summary of vitals present in the request body."""
+    fields = (
+        ("heart_rate", data.get("heart_rate")),
+        ("oxygen_saturation", data.get("oxygen_saturation")),
+        ("temperature", data.get("temperature")),
+        ("ambient_temperature", data.get("ambient_temperature")),
+    )
+    present = [name for name, value in fields if value is not None]
+    if data.get("latitude") is not None and data.get("longitude") is not None:
+        present.append("location")
+    if data.get("diagnostics"):
+        present.append("diagnostics")
+    return ", ".join(present) if present else "none"
 
 
 @monitoring_api.route("/api/v1/monitoring/data-records", methods=["POST"])
 def create_measurement():
     """Ingest a vital-signs reading emitted by an authenticated device.
 
-    Validates the device identity via the ``X-API-Key`` header and the
-    ``mac_address`` field in the request body, then delegates to the
-    application service to apply domain rules, buffer the reading locally, and
-    publish it to the cloud.
+    **Identity (gateway):** ``X-Device-Id`` + ``X-API-Key`` headers (or
+    legacy ``device_id`` in the JSON body).  The edge resolves ``device_type`` from
+    its IAM registry when syncing to the cloud.  Nursing-home and resident
+    correlation is resolved by the backend from ``deviceId``.
 
-    **Request headers:**
-
-    - ``X-API-Key`` *(required)*: API key paired with the device.
-    - ``Content-Type: application/json`` *(required)*.
-
-    **Request body (JSON):**
+    **Request body (JSON) — vitals only:**
 
     .. code-block:: json
 
         {
-            "mac_address": "AA:BB:CC:DD:EE:FF",
             "timestamp": "2026-06-16T18:23:00-05:00",
             "heart_rate": 72,
-            "systolic": 120,
-            "diastolic": 80,
-            "temperature": 36.6,
             "oxygen_saturation": 98,
-            "respiratory_rate": 16
+            "temperature": 36.6
         }
-
-    Every vital is optional; ``timestamp`` defaults to the current UTC time when
-    omitted.
-
-    **Responses:**
-
-    - ``201 Created`` – Reading buffered (and synced when the cloud is reachable).
-    - ``400 Bad Request`` – Missing ``mac_address`` or invalid vital values.
-    - ``401 Unauthorized`` – ``mac_address`` or ``X-API-Key`` absent or invalid.
-
-    Returns:
-        tuple[flask.Response, int]: JSON body paired with the HTTP status code.
     """
-    auth_result = authenticate_request()
-    if auth_result:
-        return auth_result
+    device, auth_error = resolve_authenticated_device()
+    if auth_error:
+        return auth_error
 
-    data = request.json
+    data = request.json or {}
     try:
-        mac_address = data["mac_address"]
         measurement = measurement_service.create_measurement(
-            mac_address=mac_address,
-            api_key=request.headers.get("X-API-Key"),
+            device=device,
             heart_rate=data.get("heart_rate"),
             systolic=data.get("systolic"),
             diastolic=data.get("diastolic"),
             temperature=data.get("temperature"),
             oxygen_saturation=data.get("oxygen_saturation"),
             respiratory_rate=data.get("respiratory_rate"),
+            ambient_temperature=data.get("ambient_temperature"),
+            latitude=data.get("latitude"),
+            longitude=data.get("longitude"),
+            satellite_count=data.get("satellite_count"),
+            satellites_in_view=data.get("satellites_in_view"),
             timestamp=data.get("timestamp"),
+            diagnostics=data.get("diagnostics"),
+        )
+        logger.info(
+            "Telemetry ingested from device %s (measurement_id=%s, vitals=%s, synced=%s)",
+            measurement.device_id,
+            measurement.id,
+            _summarize_vitals(data),
+            measurement.synced,
         )
         return jsonify({
             "id": measurement.id,
             "device_id": measurement.device_id,
-            "mac_address": measurement.mac_address,
-            "nursing_home_id": measurement.nursing_home_id,
+            "device_type": measurement.device_type,
             "timestamp": measurement.timestamp.isoformat() if hasattr(measurement.timestamp, "isoformat") else measurement.timestamp,
             "heart_rate": measurement.heart_rate,
             "systolic": measurement.systolic,
@@ -89,9 +94,15 @@ def create_measurement():
             "temperature": measurement.temperature,
             "oxygen_saturation": measurement.oxygen_saturation,
             "respiratory_rate": measurement.respiratory_rate,
+            "ambient_temperature": measurement.ambient_temperature,
+            "latitude": measurement.latitude,
+            "longitude": measurement.longitude,
+            "satellite_count": measurement.satellite_count,
+            "satellites_in_view": measurement.satellites_in_view,
+            "diagnostics": measurement.diagnostics,
             "synced": measurement.synced,
         }), 201
-    except KeyError:
-        return jsonify({"error": "Missing required fields"}), 400
     except ValueError as e:
+        device_id = device.device_id if device else "—"
+        logger.warning("Telemetry rejected for device %s: %s", device_id, e)
         return jsonify({"error": str(e)}), 400

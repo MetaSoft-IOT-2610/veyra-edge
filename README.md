@@ -1,6 +1,6 @@
 # Veyra Edge Service
 
-**Version**: 0.2.1  
+**Version**: 0.2.2  
 **Date**: June 2026
 
 `veyra_edge_service` is the IoT edge application that runs on an on-premise Edge

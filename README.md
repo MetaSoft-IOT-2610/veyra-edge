@@ -1,6 +1,6 @@
 # Veyra Edge Service
 
-**Version**: 0.2.0  
+**Version**: 0.2.1  
 **Date**: June 2026
 
 `veyra_edge_service` is the IoT edge application that runs on an on-premise Edge
@@ -11,8 +11,7 @@ approach.
 Unlike a purely local edge service, the Veyra edge is **bidirectional**:
 
 - **Backend → Edge** — the cloud backend provisions the local device registry,
-  so the edge knows which devices to accept and which nursing home each one
-  belongs to.
+  so the edge knows which devices to accept.
 - **Edge → Backend** — the edge ingests vital-signs telemetry from devices,
   buffers it locally in SQLite (offline-first), and publishes it to the cloud.
 
@@ -168,17 +167,28 @@ Gateway identification uses **`device_id` + `api_key`** only.
   "timestamp": "2026-06-16T18:23:00-05:00",
   "heart_rate": 72,
   "oxygen_saturation": 98,
-  "temperature": 36.6
+  "temperature": 36.6,
+  "ambient_temperature": 13.2,
+  "latitude": -12.0464,
+  "longitude": -77.0428,
+  "satellite_count": 4,
+  "satellites_in_view": 8,
+  "diagnostics": {
+    "max30102_status": "ok",
+    "lm35_status": "ambient_only",
+    "gps_status": "fix_ok"
+  }
 }
 ```
 
-The body carries **sensor readings only**. The gateway resolves `device_type`
-from its IAM registry when syncing. Nursing-home and resident correlation is
-resolved by the **cloud backend** from `deviceId`.
+All fields except headers are optional. Typical band payloads include vitals,
+ambient or body temperature (mutually exclusive from the LM35), GPS when
+available, and a `diagnostics` object for remote troubleshooting.
 
-All vitals are optional; validation ranges match the backend value objects
+Validation ranges match the backend value objects
 (heart rate 0–300, systolic 0–300, diastolic 0–200, systolic > diastolic,
-temperature 30.0–45.0 °C, oxygen saturation 0–100 %, respiratory rate 0–60).
+temperature 30.0–45.0 °C, oxygen saturation 0–100 %, respiratory rate 0–60,
+ambient temperature −40.0–60.0 °C).
 
 - `201 Created` — reading buffered (`synced` indicates cloud publication).
 - `400 Bad Request` — invalid vitals.
@@ -215,6 +225,13 @@ When `CLOUD_SYNC_ENABLED=true`, each buffered measurement is published to:
   "heartRate": 72,
   "temperature": 36.6,
   "oxygenSaturation": 98,
+  "ambientTemperature": 13.2,
+  "location": {
+    "latitude": -12.0464,
+    "longitude": -77.0428
+  },
+  "satelliteCount": 4,
+  "satellitesInView": 8,
   "diagnostics": { }
 }
 ```

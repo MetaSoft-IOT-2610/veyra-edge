@@ -7,7 +7,7 @@ layer and must not be referenced directly from the domain or application
 layers; access is mediated through the repository.
 """
 from peewee import (
-    Model, AutoField, CharField, IntegerField, FloatField, DateTimeField, BooleanField
+    Model, AutoField, CharField, IntegerField, FloatField, DateTimeField, BooleanField, TextField
 )
 
 from shared.infrastructure.database import db
@@ -23,9 +23,8 @@ class Measurement(Model):
 
     Attributes:
         id (AutoField): Auto-incrementing integer primary key.
-        device_id (CharField): Stable backend identifier of the device.
-        mac_address (CharField): Hardware MAC address of the device.
-        nursing_home_id (IntegerField): Owning nursing-home identifier.
+        device_id (CharField): Stable node identifier of the device.
+        device_type (CharField): Device category from the gateway registry.
         timestamp (DateTimeField): UTC timestamp of the reading.
         heart_rate (IntegerField): Heart rate in bpm (nullable).
         systolic (IntegerField): Systolic blood pressure in mmHg (nullable).
@@ -39,8 +38,7 @@ class Measurement(Model):
 
     id = AutoField()
     device_id = CharField()
-    mac_address = CharField()
-    nursing_home_id = IntegerField()
+    device_type = CharField()
     timestamp = DateTimeField()
     heart_rate = IntegerField(null=True)
     systolic = IntegerField(null=True)
@@ -48,6 +46,12 @@ class Measurement(Model):
     temperature = FloatField(null=True)
     oxygen_saturation = IntegerField(null=True)
     respiratory_rate = IntegerField(null=True)
+    ambient_temperature = FloatField(null=True)
+    latitude = FloatField(null=True)
+    longitude = FloatField(null=True)
+    satellite_count = IntegerField(null=True)
+    satellites_in_view = IntegerField(null=True)
+    diagnostics_json = TextField(null=True)
     synced = BooleanField(default=False)
     created_at = DateTimeField()
 

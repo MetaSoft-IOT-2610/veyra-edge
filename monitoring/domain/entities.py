@@ -5,7 +5,7 @@ Entities carry identity and encapsulate domain state; they should only be
 created or mutated through domain services that enforce business invariants.
 """
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 
 class Measurement:
@@ -22,10 +22,8 @@ class Measurement:
     which validates the raw sensor data before constructing this entity.
 
     Attributes:
-        device_id (str): Stable backend identifier of the originating device.
-        mac_address (str): Hardware MAC address of the originating device.
-        nursing_home_id (int): Owning nursing-home identifier, used to route the
-            reading to the correct tenant in the cloud.
+        device_id (str): Stable node identifier of the originating device.
+        device_type (str): Device category from gateway registry (``VITAL_SIGNS`` / ``GPS``).
         timestamp (datetime): UTC timestamp of when the reading was taken.
         heart_rate (int | None): Heart rate in beats per minute.
         systolic (int | None): Systolic blood pressure in mmHg.
@@ -40,8 +38,7 @@ class Measurement:
     def __init__(
             self,
             device_id: str,
-            mac_address: str,
-            nursing_home_id: int,
+            device_type: str,
             timestamp: datetime,
             heart_rate: Optional[int] = None,
             systolic: Optional[int] = None,
@@ -49,14 +46,19 @@ class Measurement:
             temperature: Optional[float] = None,
             oxygen_saturation: Optional[int] = None,
             respiratory_rate: Optional[int] = None,
+            ambient_temperature: Optional[float] = None,
+            latitude: Optional[float] = None,
+            longitude: Optional[float] = None,
+            satellite_count: Optional[int] = None,
+            satellites_in_view: Optional[int] = None,
+            diagnostics: Optional[dict[str, Any]] = None,
             synced: bool = False,
             id: int = None):
         """Initialise a Measurement entity.
 
         Args:
-            device_id (str): Stable backend identifier of the device.
-            mac_address (str): Hardware MAC address of the device.
-            nursing_home_id (int): Owning nursing-home identifier.
+            device_id (str): Stable node identifier of the device.
+            device_type (str): Device category assigned at the gateway.
             timestamp (datetime): UTC timestamp of the reading.
             heart_rate (int, optional): Heart rate in beats per minute.
             systolic (int, optional): Systolic blood pressure in mmHg.
@@ -64,13 +66,18 @@ class Measurement:
             temperature (float, optional): Body temperature in Celsius.
             oxygen_saturation (int, optional): Oxygen saturation percentage.
             respiratory_rate (int, optional): Respiratory rate in breaths/min.
+            ambient_temperature (float, optional): Ambient temperature in Celsius.
+            latitude (float, optional): GPS latitude in decimal degrees.
+            longitude (float, optional): GPS longitude in decimal degrees.
+            satellite_count (int, optional): Satellites used for fix.
+            satellites_in_view (int, optional): Satellites in view.
+            diagnostics (dict, optional): Per-sensor health snapshot from the node.
             synced (bool): Cloud synchronization flag.  Defaults to ``False``.
             id (int, optional): Persistence identity.  Defaults to ``None``.
         """
         self.id = id
         self.device_id = device_id
-        self.mac_address = mac_address
-        self.nursing_home_id = nursing_home_id
+        self.device_type = device_type
         self.timestamp = timestamp
         self.heart_rate = heart_rate
         self.systolic = systolic
@@ -78,4 +85,10 @@ class Measurement:
         self.temperature = temperature
         self.oxygen_saturation = oxygen_saturation
         self.respiratory_rate = respiratory_rate
+        self.ambient_temperature = ambient_temperature
+        self.latitude = latitude
+        self.longitude = longitude
+        self.satellite_count = satellite_count
+        self.satellites_in_view = satellites_in_view
+        self.diagnostics = diagnostics
         self.synced = synced

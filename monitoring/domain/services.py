@@ -8,11 +8,10 @@ backend Tracking bounded context (``HeartRate``, ``BloodPressure``,
 accepted at the edge is also accepted by the cloud.
 """
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from dateutil.parser import parse
 
-from iam.domain.entities import Device
 from monitoring.domain.entities import Measurement
 
 
@@ -27,27 +26,40 @@ class MeasurementService:
 
     @staticmethod
     def create_measurement(
-            device: Device,
+            device_id: str,
+            device_type: str,
             heart_rate: Optional[int],
             systolic: Optional[int],
             diastolic: Optional[int],
             temperature: Optional[float],
             oxygen_saturation: Optional[int],
             respiratory_rate: Optional[int],
-            timestamp: Optional[str]) -> Measurement:
+            ambient_temperature: Optional[float],
+            latitude: Optional[float],
+            longitude: Optional[float],
+            satellite_count: Optional[int],
+            satellites_in_view: Optional[int],
+            timestamp: Optional[str],
+            diagnostics: Optional[dict[str, Any]] = None) -> Measurement:
         """Validate raw sensor data and create a :class:`Measurement` entity.
 
         Args:
-            device (Device): The authenticated device that produced the reading;
-                supplies ``device_id``, ``mac_address`` and ``nursing_home_id``.
+            device_id (str): Stable node identifier of the originating device.
+            device_type (str): Device category (gateway registry).
             heart_rate (int | None): Heart rate in beats per minute [0, 300].
             systolic (int | None): Systolic blood pressure in mmHg [0, 300].
             diastolic (int | None): Diastolic blood pressure in mmHg [0, 200].
             temperature (float | None): Temperature in Celsius [30.0, 45.0].
             oxygen_saturation (int | None): Oxygen saturation percentage [0, 100].
             respiratory_rate (int | None): Respiratory rate in breaths/min [0, 60].
+            ambient_temperature (float | None): Ambient temperature [-40, 60] °C.
+            latitude (float | None): GPS latitude [-90, 90].
+            longitude (float | None): GPS longitude [-180, 180].
+            satellite_count (int | None): Satellites used for fix [0, 99].
+            satellites_in_view (int | None): Satellites in view [0, 99].
             timestamp (str | None): ISO 8601 timestamp of the reading; defaults
                 to the current UTC time when omitted.
+            diagnostics (dict | None): Optional per-sensor health snapshot.
 
         Returns:
             Measurement: A new, unsaved measurement with a UTC-normalized
@@ -68,12 +80,23 @@ class MeasurementService:
             oxygen_saturation, "oxygen_saturation", 0, 100)
         respiratory_rate = MeasurementService._validate_int(
             respiratory_rate, "respiratory_rate", 0, 60)
+        ambient_temperature = MeasurementService._validate_float(
+            ambient_temperature, "ambient_temperature", -40.0, 60.0)
+        latitude = MeasurementService._validate_float(
+            latitude, "latitude", -90.0, 90.0)
+        longitude = MeasurementService._validate_float(
+            longitude, "longitude", -180.0, 180.0)
+        satellite_count = MeasurementService._validate_int(
+            satellite_count, "satellite_count", 0, 99)
+        satellites_in_view = MeasurementService._validate_int(
+            satellites_in_view, "satellites_in_view", 0, 99)
+        MeasurementService._validate_location_pair(latitude, longitude)
+        validated_diagnostics = MeasurementService._validate_diagnostics(diagnostics)
         systolic, diastolic = MeasurementService._validate_blood_pressure(systolic, diastolic)
 
         return Measurement(
-            device_id=device.device_id,
-            mac_address=device.mac_address,
-            nursing_home_id=device.nursing_home_id,
+            device_id=device_id,
+            device_type=device_type,
             timestamp=parsed_timestamp,
             heart_rate=heart_rate,
             systolic=systolic,
@@ -81,6 +104,12 @@ class MeasurementService:
             temperature=temperature,
             oxygen_saturation=oxygen_saturation,
             respiratory_rate=respiratory_rate,
+            ambient_temperature=ambient_temperature,
+            latitude=latitude,
+            longitude=longitude,
+            satellite_count=satellite_count,
+            satellites_in_view=satellites_in_view,
+            diagnostics=validated_diagnostics,
         )
 
     @staticmethod
@@ -136,3 +165,20 @@ class MeasurementService:
         if systolic <= diastolic:
             raise ValueError("systolic must be greater than diastolic")
         return systolic, diastolic
+
+    @staticmethod
+    def _validate_location_pair(latitude, longitude):
+        """Require latitude and longitude to be supplied together."""
+        if latitude is None and longitude is None:
+            return
+        if latitude is None or longitude is None:
+            raise ValueError("latitude and longitude must be provided together")
+
+    @staticmethod
+    def _validate_diagnostics(diagnostics) -> Optional[dict[str, Any]]:
+        """Accept an optional diagnostics object from the embedded node."""
+        if diagnostics is None:
+            return None
+        if not isinstance(diagnostics, dict):
+            raise ValueError("diagnostics must be a JSON object")
+        return diagnostics

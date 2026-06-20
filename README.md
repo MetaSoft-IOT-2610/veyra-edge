@@ -1,6 +1,6 @@
 # Veyra Edge Service
 
-**Version**: 0.2.1  
+**Version**: 0.2.2  
 **Date**: June 2026
 
 `veyra_edge_service` is the IoT edge application that runs on an on-premise Edge
@@ -128,6 +128,7 @@ Seeding is idempotent: existing `device_id` values are skipped. Set
 | `NODE_SEED_ENABLED` | Register nodes from seed file on start-up (`true`/`false`) |
 | `NODE_SEED_PATH` | Path to the JSON node seed file (default: `nodes.seed.json`) |
 | `GATEWAY_DEVICE_ID` | Cloud identifier of this edge server (enables `gateway` in sync payload) |
+| `GATEWAY_API_KEY` | API key paired with `GATEWAY_DEVICE_ID` for backend authentication |
 | `GATEWAY_DEVICE_TYPE` | Device type for the edge server (default: `EDGE_GATEWAY`) |
 
 ## API Contract
@@ -213,6 +214,12 @@ When `CLOUD_SYNC_ENABLED=true`, each buffered measurement is published to:
 
 `POST {API_SYNC_URL}/api/v1/measurements`
 
+**Headers:** `Content-Type: application/json`, `X-Device-Id: <GATEWAY_DEVICE_ID>`, `X-API-Key: <GATEWAY_API_KEY>`
+
+The edge authenticates to the backend with the same `device_id` + `api_key` pattern
+used by `VITAL_SIGNS` nodes. Both `GATEWAY_DEVICE_ID` and `GATEWAY_API_KEY` must be
+set in `.env`; otherwise cloud sync is skipped and readings stay buffered locally.
+
 ```json
 {
   "deviceId": "band-001",
@@ -238,7 +245,7 @@ When `CLOUD_SYNC_ENABLED=true`, each buffered measurement is published to:
 
 - **`deviceType`** on the node is always an IoT category (`VITAL_SIGNS` for bands).
 - **`gateway`** identifies the on-premise edge server (`EDGE_GATEWAY`), configured
-  once per deployment via `GATEWAY_DEVICE_ID` in `.env`.
+  once per deployment via `GATEWAY_DEVICE_ID` and `GATEWAY_API_KEY` in `.env`.
 - The backend resolves nursing-home and resident assignment from `deviceId`.
 
 > [!NOTE]

@@ -16,6 +16,7 @@ The variables mirror the deployment contract documented for the Edge Server:
 - ``NODE_SEED_PATH``: JSON file listing nodes to register on start-up.
 - ``NODE_SEED_ENABLED``: toggle automatic node seeding (`true`/`false`).
 - ``GATEWAY_DEVICE_ID``: stable identifier of this edge server at the cloud backend.
+- ``GATEWAY_API_KEY``: secret API key paired with ``GATEWAY_DEVICE_ID`` for cloud auth.
 - ``GATEWAY_DEVICE_TYPE``: device category for the edge gateway (default ``EDGE_GATEWAY``).
 """
 import os
@@ -50,4 +51,5 @@ class EdgeConfig:
     )
     NODE_SEED_ENABLED: bool = os.getenv("NODE_SEED_ENABLED", "true").lower() == "true"
     GATEWAY_DEVICE_ID: str = os.getenv("GATEWAY_DEVICE_ID", "")
+    GATEWAY_API_KEY: str = os.getenv("GATEWAY_API_KEY", "")
     GATEWAY_DEVICE_TYPE: str = os.getenv("GATEWAY_DEVICE_TYPE", "EDGE_GATEWAY")

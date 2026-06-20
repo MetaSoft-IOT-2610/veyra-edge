@@ -38,10 +38,10 @@ def _summarize_vitals(data: dict) -> str:
 def create_measurement():
     """Ingest a vital-signs reading emitted by an authenticated device.
 
-    **Identity (gateway):** ``X-Device-Id`` + ``X-API-Key`` headers (or
-    legacy ``device_id`` in the JSON body).  The edge resolves ``device_type`` from
-    its IAM registry when syncing to the cloud.  Nursing-home and resident
-    correlation is resolved by the backend from ``deviceId``.
+    **Identity:** ``Authorization: Bearer <access_token>`` header obtained from
+    ``POST /api/v1/auth/sign-in``.  The edge resolves ``device_type`` from its IAM
+    registry when syncing to the cloud.  Nursing-home and resident correlation
+    is resolved by the backend from ``deviceId``.
 
     **Request body (JSON) — vitals only:**
 

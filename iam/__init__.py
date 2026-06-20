@@ -1,6 +1,6 @@
 """Identity and Access Management (IAM) bounded context package.
 
-Handles device provisioning, look-up, and API-key-based authentication for
+Handles device provisioning, look-up, and MAC-based sign-in authentication for
 IoT devices at the edge, following a Domain-Driven Design layered architecture:
 
 - **domain**: ``Device`` aggregate root, ``DeviceService`` and ``AuthService``

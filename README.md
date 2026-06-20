@@ -1,5 +1,8 @@
 # Veyra Edge Service
 
+**Version**: 0.2.0  
+**Date**: June 2026
+
 `veyra_edge_service` is the IoT edge application that runs on an on-premise Edge
 Server inside each nursing home. It bridges the embedded IoT devices (vital
 signs band) and the Veyra cloud backend, following a Domain-Driven Design (DDD)

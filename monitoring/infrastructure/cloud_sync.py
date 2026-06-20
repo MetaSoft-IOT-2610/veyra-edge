@@ -50,8 +50,15 @@ class MeasurementCloudGateway:
         """
         url = f"{self.base_url}{MEASUREMENTS_PATH}"
         payload = self._to_payload(measurement)
+        headers = self._gateway_auth_headers()
+        if headers is None:
+            LOGGER.warning(
+                "Cloud sync skipped for device %s: set GATEWAY_DEVICE_ID and GATEWAY_API_KEY in .env",
+                measurement.device_id,
+            )
+            return False
         try:
-            response = requests.post(url, json=payload, timeout=self.timeout)
+            response = requests.post(url, json=payload, headers=headers, timeout=self.timeout)
         except requests.RequestException as exc:
             LOGGER.warning("Cloud sync failed for device %s: %s", measurement.device_id, exc)
             return False
@@ -65,6 +72,18 @@ class MeasurementCloudGateway:
             measurement.device_id, response.status_code, response.text,
         )
         return False
+
+    @staticmethod
+    def _gateway_auth_headers() -> dict[str, str] | None:
+        """Return cloud auth headers for this edge gateway, mirroring IoT node auth."""
+        device_id = EdgeConfig.GATEWAY_DEVICE_ID.strip()
+        api_key = EdgeConfig.GATEWAY_API_KEY.strip()
+        if not device_id or not api_key:
+            return None
+        return {
+            "X-Device-Id": device_id,
+            "X-API-Key": api_key,
+        }
 
     @staticmethod
     def _to_payload(measurement: Measurement) -> dict:

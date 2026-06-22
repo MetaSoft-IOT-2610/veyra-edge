@@ -28,6 +28,7 @@ class DeviceRegistrySyncApplicationService:
         since = self.device_repository.get_max_cloud_updated_at()
         entries = self.registry_gateway.pull(since)
         if entries is None:
+            LOGGER.warning("Registry sync failed: cloud rejected or unreachable (check GATEWAY_DEVICE_ID + MAC in cloud)")
             return 0
 
         applied = 0
@@ -42,6 +43,8 @@ class DeviceRegistrySyncApplicationService:
 
         if applied:
             LOGGER.info("Registry sync applied %s device record(s) from cloud", applied)
+        elif entries:
+            LOGGER.info("Registry sync complete: %s device(s) already up to date", len(entries))
         else:
-            LOGGER.debug("Registry sync complete: no changes from cloud")
+            LOGGER.info("Registry sync complete: cloud registry is empty or unreachable")
         return applied

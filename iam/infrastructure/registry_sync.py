@@ -2,7 +2,7 @@
 
 Pulls the authoritative device registry from the cloud backend and applies it
 to the local SQLite mirror.  The gateway authenticates as the edge server using
-``GATEWAY_DEVICE_ID`` + ``GATEWAY_MAC_ADDRESS`` (``X-Device-Id`` / ``X-API-Key``).
+``GATEWAY_DEVICE_ID`` + ``GATEWAY_MAC_ADDRESS`` (``X-Device-Id`` / ``X-Device-Mac``).
 """
 import logging
 from datetime import datetime, timezone

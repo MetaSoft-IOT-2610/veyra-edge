@@ -1,9 +1,9 @@
 """Gateway authentication headers for edge → cloud HTTP calls.
 
-Uses the same header names as smart-band node → edge (``X-Device-Id`` +
-``X-API-Key``). The credential in ``X-API-Key`` is the gateway MAC address,
-read from the host network interface at runtime (like ``WiFi.macAddress()`` on
-the ESP32). Set ``GATEWAY_MAC_ADDRESS`` in ``.env`` only to override detection.
+Uses the same header names as embedded node → edge (``X-Device-Id`` +
+``X-Device-Mac``). The MAC is read from the host network interface at runtime
+(like ``WiFi.macAddress()`` on the ESP32). Set ``GATEWAY_MAC_ADDRESS`` in ``.env``
+only to override detection.
 """
 from shared.infrastructure.config import EdgeConfig
 from shared.infrastructure.host_mac import resolve_gateway_mac_address
@@ -17,5 +17,5 @@ def gateway_cloud_auth_headers() -> dict[str, str] | None:
         return None
     return {
         "X-Device-Id": device_id,
-        "X-API-Key": mac_address,
+        "X-Device-Mac": mac_address,
     }

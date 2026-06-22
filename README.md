@@ -128,7 +128,7 @@ Seeding is idempotent: existing `device_id` values are skipped. Set
 | `NODE_SEED_ENABLED` | Register nodes from seed file on start-up (`true`/`false`) |
 | `NODE_SEED_PATH` | Path to the JSON node seed file (default: `nodes.seed.json`) |
 | `GATEWAY_DEVICE_ID` | Cloud identifier of this edge server (enables `gateway` in sync payload) |
-| `GATEWAY_MAC_ADDRESS` | Optional override for gateway MAC in `X-API-Key`; auto-detected from host NIC when empty |
+| `GATEWAY_MAC_ADDRESS` | Optional override for gateway MAC in `X-Device-Mac`; auto-detected from host NIC when empty |
 | `GATEWAY_DEVICE_TYPE` | Device type for the edge server (default: `EDGE_GATEWAY`) |
 | `EDGE_JWT_SECRET` | Signing secret for device sign-in tokens (`POST /api/v1/auth/sign-in`) |
 | `EDGE_JWT_TTL_SECONDS` | Access-token lifetime in seconds (default: `3600`) |
@@ -147,7 +147,7 @@ registered devices into SQLite.
 ```http
 GET {API_SYNC_URL}/api/v1/edge/registry?since=<iso8601>
 X-Device-Id: <GATEWAY_DEVICE_ID>
-X-API-Key: <host MAC at runtime, or GATEWAY_MAC_ADDRESS override>
+X-Device-Mac: <host MAC at runtime, or GATEWAY_MAC_ADDRESS override>
 ```
 
 Response:
@@ -283,10 +283,10 @@ When `CLOUD_SYNC_ENABLED=true`, each buffered measurement is published to:
 
 `POST {API_SYNC_URL}/api/v1/measurements`
 
-**Headers:** `Content-Type: application/json`, `X-Device-Id: <GATEWAY_DEVICE_ID>`, `X-API-Key: <GATEWAY_MAC_ADDRESS>`
+**Headers:** `Content-Type: application/json`, `X-Device-Id: <GATEWAY_DEVICE_ID>`, `X-Device-Mac: <GATEWAY_MAC_ADDRESS>`
 
 The edge authenticates to the backend with the same **header names** as smart-band
-(`X-Device-Id` + `X-API-Key`). The MAC is read from the **host network interface
+(`X-Device-Id` + `X-Device-Mac`). The MAC is read from the **host network interface
 at runtime** (same idea as `WiFi.macAddress()` on the ESP32). Set
 `GATEWAY_MAC_ADDRESS` in `.env` only to override detection. `GATEWAY_DEVICE_ID`
 must be set; otherwise cloud sync is skipped and readings stay buffered locally.
@@ -317,7 +317,7 @@ must be set; otherwise cloud sync is skipped and readings stay buffered locally.
 
 **Cloud validation (backend):**
 
-1. Authenticate the gateway via `X-Device-Id` + `X-API-Key` (MAC address).
+1. Authenticate the gateway via `X-Device-Id` + `X-Device-Mac` (MAC address).
 2. Look up `deviceId` + `macAddress` in the cloud device registry.
 3. Accept the measurement (`2xx`) only when the pair exists and `status` is `ACTIVE`; otherwise `401` or `404`.
 

@@ -16,7 +16,7 @@ The variables mirror the deployment contract documented for the Edge Server:
 - ``NODE_SEED_PATH``: JSON file listing nodes to register on start-up.
 - ``NODE_SEED_ENABLED``: toggle automatic node seeding (`true`/`false`).
 - ``GATEWAY_DEVICE_ID``: stable identifier of this edge server at the cloud backend.
-- ``GATEWAY_MAC_ADDRESS``: optional override for the gateway MAC sent in ``X-API-Key``.
+- ``GATEWAY_MAC_ADDRESS``: optional override for the gateway MAC sent in ``X-Device-Mac``.
   When empty, the edge reads the primary host network interface MAC at runtime.
 - ``GATEWAY_DEVICE_TYPE``: device category for the edge gateway (default ``EDGE_GATEWAY``).
 - ``EDGE_JWT_SECRET``: signing secret for edge-issued device access tokens.

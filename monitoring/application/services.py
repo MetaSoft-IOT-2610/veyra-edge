@@ -6,6 +6,7 @@ repositories and outbound gateways without containing domain logic themselves.
 """
 import logging
 
+from iam.application.registry_sync_service import DeviceRegistrySyncApplicationService
 from iam.domain.entities import Device
 from iam.infrastructure.repositories import DeviceRepository
 from monitoring.domain.entities import Measurement
@@ -41,6 +42,7 @@ class MeasurementApplicationService:
         self.device_repository = DeviceRepository()
         self.measurement_service = MeasurementService()
         self.cloud_gateway = MeasurementCloudGateway()
+        self.registry_sync_service = DeviceRegistrySyncApplicationService()
 
     def create_measurement(
             self,
@@ -92,18 +94,20 @@ class MeasurementApplicationService:
         )
         saved = self.measurement_repository.save(measurement)
 
-        self._try_sync(saved)
+        self._try_sync(saved, sync_registry=True)
         return saved
 
     def sync_pending(self) -> int:
         """Replay every buffered measurement that has not yet reached the cloud."""
         synced_count = 0
         for measurement in self.measurement_repository.find_unsynced():
-            if self._try_sync(measurement):
+            if self._try_sync(measurement, sync_registry=False):
                 synced_count += 1
+        if synced_count:
+            self._sync_registry_from_cloud()
         return synced_count
 
-    def _try_sync(self, measurement: Measurement) -> bool:
+    def _try_sync(self, measurement: Measurement, sync_registry: bool = True) -> bool:
         """Attempt to publish a buffered measurement and flag it on success."""
         if not EdgeConfig.CLOUD_SYNC_ENABLED:
             return False
@@ -120,4 +124,14 @@ class MeasurementApplicationService:
         if published:
             self.measurement_repository.mark_as_synced(measurement.id)
             measurement.synced = True
+            if sync_registry:
+                self._sync_registry_from_cloud()
         return published
+
+    def _sync_registry_from_cloud(self) -> None:
+        if not EdgeConfig.REGISTRY_SYNC_ENABLED:
+            return
+        try:
+            self.registry_sync_service.sync_from_cloud()
+        except Exception as exc:
+            LOGGER.warning("Registry sync after cloud publish failed: %s", exc)

@@ -60,6 +60,12 @@ class MeasurementCloudGateway:
                 measurement.device_id,
             )
             return False
+        if not self._has_publishable_vitals(measurement):
+            LOGGER.debug(
+                "Cloud sync skipped for device %s: no vital signs in buffered reading",
+                measurement.device_id,
+            )
+            return False
         headers["Content-Type"] = "application/json"
         try:
             response = requests.post(url, json=payload, headers=headers, timeout=self.timeout)
@@ -76,6 +82,17 @@ class MeasurementCloudGateway:
             measurement.device_id, response.status_code, response.text,
         )
         return False
+
+    @staticmethod
+    def _has_publishable_vitals(measurement: Measurement) -> bool:
+        """Cloud requires at least one vital sign (ambient counts as temperature)."""
+        if measurement.heart_rate is not None:
+            return True
+        if measurement.oxygen_saturation is not None:
+            return True
+        if measurement.temperature is not None:
+            return True
+        return measurement.ambient_temperature is not None
 
     @staticmethod
     def _to_payload(measurement: Measurement, mac_address: str) -> dict:
@@ -95,8 +112,9 @@ class MeasurementCloudGateway:
             "temperature": measurement.temperature,
             "oxygenSaturation": measurement.oxygen_saturation,
             "respiratoryRate": measurement.respiratory_rate,
-            "ambientTemperature": measurement.ambient_temperature,
         }
+        if measurement.ambient_temperature is not None:
+            payload["ambientTemperature"] = measurement.ambient_temperature
         gateway_id = EdgeConfig.GATEWAY_DEVICE_ID.strip()
         if gateway_id:
             payload["gateway"] = {

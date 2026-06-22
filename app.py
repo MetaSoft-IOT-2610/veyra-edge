@@ -35,6 +35,7 @@ from shared.infrastructure.database import init_db  # noqa: E402
 from shared.infrastructure.node_seed import seed_registered_nodes  # noqa: E402
 from shared.infrastructure.registry_sync_scheduler import (  # noqa: E402
     maybe_sync_registry_from_cloud,
+    maybe_sync_pending_measurements,
     sync_registry_from_cloud_on_startup,
 )
 
@@ -62,6 +63,7 @@ def setup():
         first_request = False
         bootstrap()
     maybe_sync_registry_from_cloud()
+    maybe_sync_pending_measurements()
 
 
 if __name__ == "__main__":

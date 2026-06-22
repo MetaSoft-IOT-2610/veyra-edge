@@ -16,7 +16,7 @@ from shared.infrastructure.gateway_auth import gateway_cloud_auth_headers
 
 LOGGER = logging.getLogger(__name__)
 
-REGISTRY_PATH = "/api/v1/edge/registry"
+REGISTRY_PATH = "/edge/registry"
 
 
 class CloudRegistryGateway:

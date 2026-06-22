@@ -8,7 +8,9 @@ The variables mirror the deployment contract documented for the Edge Server:
 
 - ``SQLITE_DB_PATH``: local path of the SQLite database used for offline
   buffering of telemetry.
-- ``API_SYNC_URL``: base URL of the cloud backend used to publish telemetry.
+- ``API_SYNC_URL``: cloud backend API base URL including ``/api/v1`` (e.g.
+  ``https://host.example.com/api/v1``).  Relative paths such as ``/measurements``
+  are appended by the edge gateways.
 - ``EDGE_DEVICE_PORT``: serial/network port of the IoT device (reserved for
   future device-ingestion transports).
 - ``CLOUD_SYNC_ENABLED``: feature flag to toggle cloud synchronization.

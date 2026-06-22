@@ -21,7 +21,7 @@ from shared.infrastructure.gateway_auth import gateway_cloud_auth_headers
 LOGGER = logging.getLogger(__name__)
 
 # Backend endpoint that ingests vital-signs telemetry from the edge.
-MEASUREMENTS_PATH = "/api/v1/measurements"
+MEASUREMENTS_PATH = "/measurements"
 
 
 class MeasurementCloudGateway:

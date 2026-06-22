@@ -103,11 +103,18 @@ class MeasurementCloudGateway:
         its registry.  An optional ``gateway`` block identifies the edge server.
         """
         timestamp = measurement.timestamp
+        if hasattr(timestamp, "isoformat"):
+            if getattr(timestamp, "tzinfo", None) is None:
+                payload_timestamp = timestamp.isoformat() + "Z"
+            else:
+                payload_timestamp = timestamp.isoformat()
+        else:
+            payload_timestamp = timestamp
         payload = {
             "deviceId": measurement.device_id,
             "deviceType": measurement.device_type,
             "macAddress": mac_address,
-            "timestamp": timestamp.isoformat() if hasattr(timestamp, "isoformat") else timestamp,
+            "timestamp": payload_timestamp,
             "heartRate": measurement.heart_rate,
             "temperature": measurement.temperature,
             "oxygenSaturation": measurement.oxygen_saturation,

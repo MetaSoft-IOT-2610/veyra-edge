@@ -97,14 +97,27 @@ class MeasurementApplicationService:
         self._try_sync(saved, sync_registry=True)
         return saved
 
-    def sync_pending(self) -> int:
-        """Replay every buffered measurement that has not yet reached the cloud."""
+    def sync_pending(self, limit: int | None = None) -> int:
+        """Replay unsynced measurements up to ``limit`` (defaults to config batch size)."""
+        batch_size = limit if limit is not None else EdgeConfig.CLOUD_SYNC_BATCH_SIZE
+        if batch_size <= 0:
+            return 0
+
         synced_count = 0
-        for measurement in self.measurement_repository.find_unsynced():
+        for measurement in self.measurement_repository.find_unsynced(limit=batch_size):
             if self._try_sync(measurement, sync_registry=False):
                 synced_count += 1
         if synced_count:
             self._sync_registry_from_cloud()
+
+        remaining = self.measurement_repository.count_unsynced()
+        if remaining:
+            LOGGER.info(
+                "Cloud sync batch complete: synced=%s, remaining unsynced=%s (batch_size=%s)",
+                synced_count,
+                remaining,
+                batch_size,
+            )
         return synced_count
 
     def _try_sync(self, measurement: Measurement, sync_registry: bool = True) -> bool:

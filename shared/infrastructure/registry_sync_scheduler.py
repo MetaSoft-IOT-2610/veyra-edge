@@ -53,6 +53,10 @@ def maybe_sync_pending_measurements() -> None:
     try:
         synced = MeasurementApplicationService().sync_pending()
         if synced:
-            LOGGER.info("Replayed %s pending measurement(s) to cloud", synced)
+            LOGGER.info(
+                "Replayed %s pending measurement(s) to cloud (batch_size=%s)",
+                synced,
+                EdgeConfig.CLOUD_SYNC_BATCH_SIZE,
+            )
     except Exception as exc:
         LOGGER.warning("Pending measurement sync failed: %s", exc)

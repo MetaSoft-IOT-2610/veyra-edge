@@ -15,6 +15,7 @@ The variables mirror the deployment contract documented for the Edge Server:
   future device-ingestion transports).
 - ``CLOUD_SYNC_ENABLED``: feature flag to toggle cloud synchronization.
 - ``CLOUD_SYNC_TIMEOUT``: HTTP timeout (seconds) for cloud sync requests.
+- ``CLOUD_SYNC_BATCH_SIZE``: max unsynced measurements replayed per background cycle.
 - ``NODE_SEED_PATH``: JSON file listing nodes to register on start-up.
 - ``NODE_SEED_ENABLED``: toggle automatic node seeding (`true`/`false`).
 - ``GATEWAY_DEVICE_ID``: stable identifier of this edge server at the cloud backend.
@@ -53,6 +54,7 @@ class EdgeConfig:
     EDGE_DEVICE_PORT: str = os.getenv("EDGE_DEVICE_PORT", "")
     CLOUD_SYNC_ENABLED: bool = os.getenv("CLOUD_SYNC_ENABLED", "true").lower() == "true"
     CLOUD_SYNC_TIMEOUT: float = float(os.getenv("CLOUD_SYNC_TIMEOUT", "5"))
+    CLOUD_SYNC_BATCH_SIZE: int = int(os.getenv("CLOUD_SYNC_BATCH_SIZE", "20"))
     NODE_SEED_PATH: str = _resolve_project_path(
         os.getenv("NODE_SEED_PATH", "nodes.seed.json"),
     )

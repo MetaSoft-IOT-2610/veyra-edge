@@ -94,13 +94,24 @@ class MeasurementRepository:
          .execute())
 
     @staticmethod
-    def find_unsynced() -> List[Measurement]:
-        """Return all buffered measurements not yet published to the cloud.
+    def find_unsynced(limit: int | None = None) -> List[Measurement]:
+        """Return buffered measurements not yet published to the cloud.
 
-        Ordered by ``id`` so they are replayed in capture order.
+        Ordered by ``id`` so they are replayed in capture order.  When ``limit``
+        is set, only the oldest ``limit`` rows are returned.
         """
         query = (MeasurementModel
                  .select()
                  .where(MeasurementModel.synced == False)  # noqa: E712 (peewee needs ==)
                  .order_by(MeasurementModel.id))
+        if limit is not None:
+            query = query.limit(limit)
         return [MeasurementRepository._to_entity(model) for model in query]
+
+    @staticmethod
+    def count_unsynced() -> int:
+        """Return how many buffered measurements are still waiting for cloud sync."""
+        return (MeasurementModel
+                .select()
+                .where(MeasurementModel.synced == False)  # noqa: E712 (peewee needs ==)
+                .count())

@@ -32,10 +32,11 @@ def init_db() -> None:
           does not exist).
         - Creates the ``devices`` table if absent.
         - Creates the ``measurements`` table if absent.
+        - Creates the ``thresholds`` table if absent.
         - Closes the connection after table creation.
     """
     db.connect()
     from iam.infrastructure.models import Device
-    from monitoring.infrastructure.models import Measurement
-    db.create_tables([Device, Measurement], safe=True)
+    from monitoring.infrastructure.models import Measurement, Threshold
+    db.create_tables([Device, Measurement, Threshold], safe=True)
     db.close()

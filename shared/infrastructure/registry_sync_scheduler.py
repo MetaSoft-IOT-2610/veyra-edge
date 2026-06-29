@@ -4,12 +4,14 @@ import time
 
 from iam.application.registry_sync_service import DeviceRegistrySyncApplicationService
 from monitoring.application.services import MeasurementApplicationService
+from monitoring.application.threshold_sync_service import ThresholdSyncApplicationService
 from shared.infrastructure.config import EdgeConfig
 
 LOGGER = logging.getLogger(__name__)
 
 _last_registry_sync_monotonic = 0.0
 _last_pending_sync_monotonic = 0.0
+_last_threshold_sync_monotonic = 0.0
 PENDING_SYNC_INTERVAL_SECONDS = 60.0
 
 
@@ -60,3 +62,28 @@ def maybe_sync_pending_measurements() -> None:
             )
     except Exception as exc:
         LOGGER.warning("Pending measurement sync failed: %s", exc)
+
+
+def maybe_sync_thresholds_from_cloud() -> None:
+    """Pull threshold deltas from the cloud when the configured interval elapses."""
+    global _last_threshold_sync_monotonic
+
+    if not EdgeConfig.THRESHOLD_SYNC_ENABLED:
+        return
+
+    now = time.monotonic()
+    if now - _last_threshold_sync_monotonic < EdgeConfig.THRESHOLD_SYNC_INTERVAL_SECONDS:
+        return
+
+    _last_threshold_sync_monotonic = now
+    try:
+        ThresholdSyncApplicationService().sync_from_cloud()
+    except Exception as exc:
+        LOGGER.warning("Background threshold sync failed: %s", exc)
+
+
+def sync_thresholds_from_cloud_on_startup() -> int:
+    """Run an eager threshold sync during application bootstrap."""
+    if not EdgeConfig.THRESHOLD_SYNC_ENABLED:
+        return 0
+    return ThresholdSyncApplicationService().sync_from_cloud()

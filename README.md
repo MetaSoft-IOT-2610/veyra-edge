@@ -1,6 +1,6 @@
 # Veyra Edge Service
 
-**Version**: 0.3.0  
+**Version**: 0.6.0  
 **Date**: June 2026
 
 `veyra_edge_service` is the IoT edge application that runs on an on-premise Edge
@@ -10,8 +10,9 @@ approach.
 
 Unlike a purely local edge service, the Veyra edge is **bidirectional**:
 
-- **Backend → Edge** — the cloud backend provisions the local device registry,
-  so the edge knows which devices to accept.
+- **Backend → Edge** — the cloud backend provisions the local device registry
+  and vital-sign alert thresholds, so the edge knows which devices to accept and
+  which bounds apply to each one.
 - **Edge → Backend** — the edge ingests vital-signs telemetry from devices,
   buffers it locally in SQLite (offline-first), and publishes it to the cloud.
 
@@ -32,12 +33,13 @@ authenticate telemetry.
 
 ### 2. Monitoring
 
-Owns vital-signs telemetry validation, local buffering, and cloud
-synchronization.
+Owns vital-signs telemetry validation, local buffering, cloud synchronization,
+and threshold caching.
 
-- **Core concept**: `Measurement`
-- **Responsibilities**: validate vitals (ranges aligned with the backend
-  value objects), buffer them in SQLite, and publish them to the cloud.
+- **Core concepts**: `Measurement`, `Threshold`
+- **Responsibilities**: validate vitals (ranges aligned with the backend value
+  objects), buffer them in SQLite, publish them to the cloud, and mirror
+  vital-sign alert thresholds pulled from the cloud for offline access.
 
 ## Layered Architecture
 
@@ -55,16 +57,19 @@ veyra_edge_service/
 ├── app.py
 ├── iam/
 │   ├── domain/          # entities (Device), services, exceptions
-│   ├── application/      # DeviceApplicationService, AuthApplicationService
-│   ├── infrastructure/   # Peewee model + repository
-│   └── interfaces/       # devices REST API + authenticate_request
+│   ├── application/     # DeviceApplicationService, AuthApplicationService
+│   │                    # DeviceRegistrySyncApplicationService
+│   ├── infrastructure/  # Peewee model, repository, CloudRegistryGateway
+│   └── interfaces/      # devices REST API + authenticate_request
 ├── monitoring/
-│   ├── domain/          # entities (Measurement), services
-│   ├── application/      # MeasurementApplicationService
-│   ├── infrastructure/   # model, repository, cloud_sync gateway
-│   └── interfaces/       # telemetry REST API
+│   ├── domain/          # entities (Measurement, Threshold), services
+│   ├── application/     # MeasurementApplicationService
+│   │                    # ThresholdSyncApplicationService
+│   ├── infrastructure/  # models, repositories, MeasurementCloudGateway
+│   │                    # ThresholdCloudGateway, ThresholdRepository
+│   └── interfaces/      # telemetry + thresholds REST API
 └── shared/
-    └── infrastructure/   # shared SQLite database + config
+    └── infrastructure/  # shared SQLite database + config + scheduler
 ```
 
 ## Technology Stack
@@ -134,10 +139,15 @@ Seeding is idempotent: existing `device_id` values are skipped. Set
 | `EDGE_JWT_TTL_SECONDS` | Access-token lifetime in seconds (default: `3600`) |
 | `REGISTRY_SYNC_ENABLED` | Pull device registry from cloud on start-up and periodically (`true`/`false`) |
 | `REGISTRY_SYNC_INTERVAL_SECONDS` | Seconds between background registry sync polls (default: `300`) |
+| `THRESHOLD_SYNC_ENABLED` | Pull vital-sign alert thresholds from cloud on start-up and periodically (`true`/`false`) |
+| `THRESHOLD_SYNC_INTERVAL_SECONDS` | Seconds between background threshold sync polls (default: `300`) |
 
 When `REGISTRY_SYNC_ENABLED=true`, the cloud is the **source of truth** for the
 device allow-list. Local `nodes.seed.json` is ignored unless you disable registry
 sync and use `NODE_SEED_ENABLED=true` for development.
+
+When `THRESHOLD_SYNC_ENABLED=true`, alert thresholds are pulled from the cloud
+and cached in SQLite for offline access. See the *Threshold sync* section below.
 
 ### Cloud registry sync (edge ← cloud)
 
@@ -169,6 +179,47 @@ Response:
 - Sync runs on application bootstrap and every `REGISTRY_SYNC_INTERVAL_SECONDS`.
 - Manual trigger: `POST /api/v1/devices/sync-from-cloud` (requires `REGISTRY_SYNC_ENABLED=true`).
 - Only devices with `status: ACTIVE` can sign in and post telemetry.
+
+### Threshold sync (edge ← cloud)
+
+The edge pulls vital-sign alert bounds from the cloud and caches them in SQLite
+so they remain available offline.
+
+```http
+GET {API_SYNC_URL}/api/v1/edge/thresholds?since=<iso8601>
+X-Device-Id: <GATEWAY_DEVICE_ID>
+X-Device-Mac: <host MAC at runtime, or GATEWAY_MAC_ADDRESS override>
+```
+
+Response:
+
+```json
+{
+  "thresholds": [
+    {
+      "device_id": "band-001",
+      "heart_rate_min": 50,
+      "heart_rate_max": 120,
+      "systolic_min": 90,
+      "systolic_max": 140,
+      "diastolic_min": 60,
+      "diastolic_max": 90,
+      "temperature_min": 35.0,
+      "temperature_max": 38.5,
+      "oxygen_saturation_min": 90,
+      "oxygen_saturation_max": null,
+      "respiratory_rate_min": 12,
+      "respiratory_rate_max": 20,
+      "updated_at": "2026-06-29T10:00:00Z"
+    }
+  ]
+}
+```
+
+- Sync runs on application bootstrap and every `THRESHOLD_SYNC_INTERVAL_SECONDS` (default 300 s).
+- Incremental: the `since` parameter carries the highest `cloud_updated_at` already stored, so only changed records are transferred.
+- Manual trigger: `POST /api/v1/monitoring/thresholds/sync-from-cloud` (requires `THRESHOLD_SYNC_ENABLED=true`).
+- Query locally cached thresholds: `GET /api/v1/monitoring/thresholds` or `GET /api/v1/monitoring/thresholds/<device_id>`.
 
 ## API Contract
 
@@ -220,7 +271,52 @@ Returns `{ "applied": <number of upserts> }`. Requires `REGISTRY_SYNC_ENABLED=tr
 }
 ```
 
-### B. Device → Edge → Cloud — Vital-signs telemetry (Monitoring)
+### B. Vital-sign thresholds (Monitoring)
+
+#### List all cached thresholds
+
+`GET /api/v1/monitoring/thresholds`
+
+Returns the full list of vital-sign bounds mirrored from the cloud.
+
+```json
+[
+  {
+    "id": 1,
+    "device_id": "band-001",
+    "heart_rate_min": 50,
+    "heart_rate_max": 120,
+    "systolic_min": 90,
+    "systolic_max": 140,
+    "diastolic_min": 60,
+    "diastolic_max": 90,
+    "temperature_min": 35.0,
+    "temperature_max": 38.5,
+    "oxygen_saturation_min": 90,
+    "oxygen_saturation_max": null,
+    "respiratory_rate_min": 12,
+    "respiratory_rate_max": 20,
+    "cloud_updated_at": "2026-06-29T10:00:00+00:00"
+  }
+]
+```
+
+- `200 OK` — list of cached records (empty array when none have been synced yet).
+
+#### Get threshold for a specific device
+
+`GET /api/v1/monitoring/thresholds/<device_id>`
+
+- `200 OK` — threshold record for that device.
+- `404 Not Found` — no threshold cached for the given `device_id`.
+
+#### Sync thresholds from cloud (manual trigger)
+
+`POST /api/v1/monitoring/thresholds/sync-from-cloud`
+
+Returns `{ "applied": <number of upserts> }`. Requires `THRESHOLD_SYNC_ENABLED=true`.
+
+### C. Device → Edge → Cloud — Vital-signs telemetry (Monitoring)
 
 `POST /api/v1/monitoring/data-records`
 

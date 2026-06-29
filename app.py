@@ -37,6 +37,8 @@ from shared.infrastructure.registry_sync_scheduler import (  # noqa: E402
     maybe_sync_registry_from_cloud,
     maybe_sync_pending_measurements,
     sync_registry_from_cloud_on_startup,
+    maybe_sync_thresholds_from_cloud,
+    sync_thresholds_from_cloud_on_startup,
 )
 
 app = Flask(__name__)
@@ -53,6 +55,8 @@ def bootstrap() -> None:
         sync_registry_from_cloud_on_startup()
     elif EdgeConfig.NODE_SEED_ENABLED:
         seed_registered_nodes()
+    if EdgeConfig.THRESHOLD_SYNC_ENABLED:
+        sync_thresholds_from_cloud_on_startup()
 
 
 @app.before_request
@@ -64,6 +68,7 @@ def setup():
         bootstrap()
     maybe_sync_registry_from_cloud()
     maybe_sync_pending_measurements()
+    maybe_sync_thresholds_from_cloud()
 
 
 if __name__ == "__main__":

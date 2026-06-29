@@ -26,6 +26,8 @@ The variables mirror the deployment contract documented for the Edge Server:
 - ``EDGE_JWT_TTL_SECONDS``: lifetime (seconds) of device access tokens after sign-in.
 - ``REGISTRY_SYNC_ENABLED``: pull the device registry from the cloud (source of truth).
 - ``REGISTRY_SYNC_INTERVAL_SECONDS``: interval between background registry sync polls.
+- ``THRESHOLD_SYNC_ENABLED``: pull vital-sign alert thresholds from the cloud.
+- ``THRESHOLD_SYNC_INTERVAL_SECONDS``: interval between background threshold sync polls.
 """
 import os
 
@@ -66,3 +68,5 @@ class EdgeConfig:
     EDGE_JWT_TTL_SECONDS: int = int(os.getenv("EDGE_JWT_TTL_SECONDS", "3600"))
     REGISTRY_SYNC_ENABLED: bool = os.getenv("REGISTRY_SYNC_ENABLED", "false").lower() == "true"
     REGISTRY_SYNC_INTERVAL_SECONDS: int = int(os.getenv("REGISTRY_SYNC_INTERVAL_SECONDS", "300"))
+    THRESHOLD_SYNC_ENABLED: bool = os.getenv("THRESHOLD_SYNC_ENABLED", "false").lower() == "true"
+    THRESHOLD_SYNC_INTERVAL_SECONDS: int = int(os.getenv("THRESHOLD_SYNC_INTERVAL_SECONDS", "300"))

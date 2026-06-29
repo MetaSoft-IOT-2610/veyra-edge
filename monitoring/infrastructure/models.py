@@ -13,6 +13,48 @@ from peewee import (
 from shared.infrastructure.database import db
 
 
+class Threshold(Model):
+    """ORM mapping for the ``thresholds`` table.
+
+    Each row holds the vital-sign alert bounds the cloud has configured for one
+    device.  Rows are created or updated by the threshold sync gateway; the edge
+    never writes to this table itself.
+
+    Attributes:
+        id (AutoField): Auto-incrementing integer primary key.
+        device_id (CharField): Stable node identifier (unique per device).
+        heart_rate_min/max (IntegerField): Heart rate bounds in bpm (nullable).
+        systolic_min/max (IntegerField): Systolic pressure bounds in mmHg (nullable).
+        diastolic_min/max (IntegerField): Diastolic pressure bounds in mmHg (nullable).
+        temperature_min/max (FloatField): Temperature bounds in °C (nullable).
+        oxygen_saturation_min/max (IntegerField): SpO₂ bounds in % (nullable).
+        respiratory_rate_min/max (IntegerField): Respiratory rate bounds (nullable).
+        cloud_updated_at (DateTimeField): UTC timestamp of the last cloud update.
+        updated_at (DateTimeField): UTC timestamp of the last local upsert.
+    """
+
+    id = AutoField()
+    device_id = CharField(unique=True)
+    heart_rate_min = IntegerField(null=True)
+    heart_rate_max = IntegerField(null=True)
+    systolic_min = IntegerField(null=True)
+    systolic_max = IntegerField(null=True)
+    diastolic_min = IntegerField(null=True)
+    diastolic_max = IntegerField(null=True)
+    temperature_min = FloatField(null=True)
+    temperature_max = FloatField(null=True)
+    oxygen_saturation_min = IntegerField(null=True)
+    oxygen_saturation_max = IntegerField(null=True)
+    respiratory_rate_min = IntegerField(null=True)
+    respiratory_rate_max = IntegerField(null=True)
+    cloud_updated_at = DateTimeField(null=True)
+    updated_at = DateTimeField()
+
+    class Meta:
+        database = db
+        table_name = 'thresholds'
+
+
 class Measurement(Model):
     """ORM mapping for the ``measurements`` table.
 

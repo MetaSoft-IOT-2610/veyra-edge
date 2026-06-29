@@ -8,6 +8,65 @@ from datetime import datetime
 from typing import Any, Optional
 
 
+class Threshold:
+    """Vital-sign alert bounds mirrored from the cloud for a single device.
+
+    Each instance represents the set of min/max bounds the cloud has configured
+    for a given ``device_id``.  All bounds are optional: the cloud may only
+    define thresholds for a subset of vitals.
+
+    Attributes:
+        device_id (str): Stable node identifier this threshold record belongs to.
+        heart_rate_min (int | None): Lower alert bound for heart rate (bpm).
+        heart_rate_max (int | None): Upper alert bound for heart rate (bpm).
+        systolic_min (int | None): Lower alert bound for systolic pressure (mmHg).
+        systolic_max (int | None): Upper alert bound for systolic pressure (mmHg).
+        diastolic_min (int | None): Lower alert bound for diastolic pressure (mmHg).
+        diastolic_max (int | None): Upper alert bound for diastolic pressure (mmHg).
+        temperature_min (float | None): Lower alert bound for temperature (°C).
+        temperature_max (float | None): Upper alert bound for temperature (°C).
+        oxygen_saturation_min (int | None): Lower alert bound for SpO₂ (%).
+        oxygen_saturation_max (int | None): Upper alert bound for SpO₂ (%).
+        respiratory_rate_min (int | None): Lower alert bound for resp. rate (breaths/min).
+        respiratory_rate_max (int | None): Upper alert bound for resp. rate (breaths/min).
+        cloud_updated_at (datetime | None): UTC timestamp of the last cloud update.
+        id (int | None): Surrogate identity assigned by the persistence layer.
+    """
+
+    def __init__(
+            self,
+            device_id: str,
+            heart_rate_min: Optional[int] = None,
+            heart_rate_max: Optional[int] = None,
+            systolic_min: Optional[int] = None,
+            systolic_max: Optional[int] = None,
+            diastolic_min: Optional[int] = None,
+            diastolic_max: Optional[int] = None,
+            temperature_min: Optional[float] = None,
+            temperature_max: Optional[float] = None,
+            oxygen_saturation_min: Optional[int] = None,
+            oxygen_saturation_max: Optional[int] = None,
+            respiratory_rate_min: Optional[int] = None,
+            respiratory_rate_max: Optional[int] = None,
+            cloud_updated_at: Optional[datetime] = None,
+            id: int = None):
+        self.id = id
+        self.device_id = device_id
+        self.heart_rate_min = heart_rate_min
+        self.heart_rate_max = heart_rate_max
+        self.systolic_min = systolic_min
+        self.systolic_max = systolic_max
+        self.diastolic_min = diastolic_min
+        self.diastolic_max = diastolic_max
+        self.temperature_min = temperature_min
+        self.temperature_max = temperature_max
+        self.oxygen_saturation_min = oxygen_saturation_min
+        self.oxygen_saturation_max = oxygen_saturation_max
+        self.respiratory_rate_min = respiratory_rate_min
+        self.respiratory_rate_max = respiratory_rate_max
+        self.cloud_updated_at = cloud_updated_at
+
+
 class Measurement:
     """Aggregate root representing a single vital-signs reading.
 

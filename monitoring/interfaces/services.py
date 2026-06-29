@@ -11,11 +11,41 @@ import logging
 
 from iam.interfaces.services import resolve_authenticated_device
 from monitoring.application.services import MeasurementApplicationService
+from monitoring.application.threshold_sync_service import ThresholdSyncApplicationService
+from monitoring.domain.entities import Threshold
+from monitoring.infrastructure.threshold_repository import ThresholdRepository
+from shared.infrastructure.config import EdgeConfig
 
 monitoring_api = Blueprint("monitoring_api", __name__)
 logger = logging.getLogger(__name__)
 
 measurement_service = MeasurementApplicationService()
+threshold_repository = ThresholdRepository()
+threshold_sync_service = ThresholdSyncApplicationService()
+
+
+def _threshold_to_json(t: Threshold) -> dict:
+    return {
+        "id": t.id,
+        "device_id": t.device_id,
+        "heart_rate_min": t.heart_rate_min,
+        "heart_rate_max": t.heart_rate_max,
+        "systolic_min": t.systolic_min,
+        "systolic_max": t.systolic_max,
+        "diastolic_min": t.diastolic_min,
+        "diastolic_max": t.diastolic_max,
+        "temperature_min": t.temperature_min,
+        "temperature_max": t.temperature_max,
+        "oxygen_saturation_min": t.oxygen_saturation_min,
+        "oxygen_saturation_max": t.oxygen_saturation_max,
+        "respiratory_rate_min": t.respiratory_rate_min,
+        "respiratory_rate_max": t.respiratory_rate_max,
+        "cloud_updated_at": (
+            t.cloud_updated_at.isoformat()
+            if t.cloud_updated_at and hasattr(t.cloud_updated_at, "isoformat")
+            else t.cloud_updated_at
+        ),
+    }
 
 
 def _summarize_vitals(data: dict) -> str:
@@ -106,3 +136,63 @@ def create_measurement():
         device_id = device.device_id if device else "—"
         logger.warning("Telemetry rejected for device %s: %s", device_id, e)
         return jsonify({"error": str(e)}), 400
+
+
+@monitoring_api.route("/api/v1/monitoring/thresholds", methods=["GET"])
+def get_thresholds():
+    """Return all vital-sign thresholds cached locally from the cloud.
+
+    **Response (JSON array):**
+
+    .. code-block:: json
+
+        [
+          {
+            "id": 1,
+            "device_id": "band-001",
+            "heart_rate_min": 50,
+            "heart_rate_max": 120,
+            "temperature_min": 35.0,
+            "temperature_max": 38.5,
+            "oxygen_saturation_min": 90,
+            "oxygen_saturation_max": null,
+            "cloud_updated_at": "2026-06-29T10:00:00+00:00"
+          }
+        ]
+
+    - ``200 OK`` — list of cached threshold records (may be empty).
+    """
+    thresholds = threshold_repository.find_all()
+    return jsonify([_threshold_to_json(t) for t in thresholds]), 200
+
+
+@monitoring_api.route("/api/v1/monitoring/thresholds/<string:device_id>", methods=["GET"])
+def get_threshold_by_device(device_id: str):
+    """Return the threshold record cached locally for a specific device.
+
+    - ``200 OK`` — threshold record found.
+    - ``404 Not Found`` — no threshold cached for the given ``device_id``.
+    """
+    threshold = threshold_repository.find_by_device_id(device_id)
+    if threshold is None:
+        return jsonify({"error": f"No threshold found for device '{device_id}'"}), 404
+    return jsonify(_threshold_to_json(threshold)), 200
+
+
+@monitoring_api.route("/api/v1/monitoring/thresholds/sync-from-cloud", methods=["POST"])
+def sync_thresholds_from_cloud():
+    """Pull the latest thresholds from the cloud (manual trigger / observability).
+
+    Requires ``THRESHOLD_SYNC_ENABLED=true`` and valid gateway credentials in ``.env``.
+
+    - ``200 OK`` — returns ``{ "applied": <number of upserts> }``.
+    - ``503 Service Unavailable`` — sync disabled or gateway credentials missing.
+    """
+    if not EdgeConfig.THRESHOLD_SYNC_ENABLED:
+        return jsonify({"error": "Threshold sync is disabled on this edge server"}), 503
+
+    applied = threshold_sync_service.sync_from_cloud()
+    if applied == 0 and not EdgeConfig.GATEWAY_DEVICE_ID.strip():
+        return jsonify({"error": "Gateway credentials are not configured"}), 503
+
+    return jsonify({"applied": applied}), 200

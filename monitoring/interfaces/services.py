@@ -83,6 +83,15 @@ def create_measurement():
             "oxygen_saturation": 98,
             "temperature": 36.6
         }
+
+    **Response (JSON) — selected fields:**
+
+    - ``synced`` (bool): Whether the measurement was published to the cloud.
+    - ``thresholds_updated`` (bool): Whether the per-request threshold sync
+      applied any change to the local threshold cache.  ``true`` means at
+      least one threshold record was created or updated as a side-effect of
+      this telemetry request; ``false`` means the local cache was already up
+      to date (or threshold sync is disabled / the cloud was unreachable).
     """
     device, auth_error = resolve_authenticated_device()
     if auth_error:
@@ -131,6 +140,7 @@ def create_measurement():
             "satellites_in_view": measurement.satellites_in_view,
             "diagnostics": measurement.diagnostics,
             "synced": measurement.synced,
+            "thresholds_updated": measurement_service.last_thresholds_applied > 0,
         }), 201
     except ValueError as e:
         device_id = device.device_id if device else "—"

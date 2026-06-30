@@ -87,3 +87,29 @@ def sync_thresholds_from_cloud_on_startup() -> int:
     if not EdgeConfig.THRESHOLD_SYNC_ENABLED:
         return 0
     return ThresholdSyncApplicationService().sync_from_cloud()
+
+
+def sync_thresholds_on_request() -> int:
+    """Pull threshold deltas from the cloud immediately, ignoring the scheduler interval.
+
+    Unlike :func:`maybe_sync_thresholds_from_cloud`, this helper does not
+    consult ``THRESHOLD_SYNC_INTERVAL_SECONDS`` and runs on every invocation.
+    It is intended to be called from per-request hot paths (for example, on
+    every incoming telemetry request) so the local threshold cache reflects
+    the latest cloud configuration as soon as a device reports vitals.
+
+    The function honours ``THRESHOLD_SYNC_ENABLED`` and swallows transport
+    errors so that callers on the request path are not affected by transient
+    cloud unavailability.
+
+    Returns:
+        int: Number of threshold records created or updated.  ``0`` when
+        threshold sync is disabled or when the cloud sync raised an error.
+    """
+    if not EdgeConfig.THRESHOLD_SYNC_ENABLED:
+        return 0
+    try:
+        return ThresholdSyncApplicationService().sync_from_cloud()
+    except Exception as exc:
+        LOGGER.warning("On-request threshold sync failed: %s", exc)
+        return 0

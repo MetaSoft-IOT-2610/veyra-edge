@@ -9,6 +9,7 @@ import logging
 from iam.application.registry_sync_service import DeviceRegistrySyncApplicationService
 from iam.domain.entities import Device
 from iam.infrastructure.repositories import DeviceRepository
+from monitoring.application.threshold_sync_service import ThresholdSyncApplicationService
 from monitoring.domain.entities import Measurement
 from monitoring.domain.services import MeasurementService
 from monitoring.infrastructure.cloud_sync import MeasurementCloudGateway
@@ -43,6 +44,8 @@ class MeasurementApplicationService:
         self.measurement_service = MeasurementService()
         self.cloud_gateway = MeasurementCloudGateway()
         self.registry_sync_service = DeviceRegistrySyncApplicationService()
+        self.threshold_sync_service = ThresholdSyncApplicationService()
+        self.last_thresholds_applied = 0
 
     def create_measurement(
             self,
@@ -95,6 +98,7 @@ class MeasurementApplicationService:
         saved = self.measurement_repository.save(measurement)
 
         self._try_sync(saved, sync_registry=True)
+        self.last_thresholds_applied = self._sync_thresholds_from_cloud()
         return saved
 
     def sync_pending(self, limit: int | None = None) -> int:
@@ -148,3 +152,24 @@ class MeasurementApplicationService:
             self.registry_sync_service.sync_from_cloud()
         except Exception as exc:
             LOGGER.warning("Registry sync after cloud publish failed: %s", exc)
+
+    def _sync_thresholds_from_cloud(self) -> int:
+        """Pull threshold deltas from the cloud after ingesting a telemetry reading.
+
+        This hook is invoked on every successful call to
+        :meth:`create_measurement` so the edge keeps the locally cached
+        thresholds aligned with the cloud configuration on each telemetry
+        request, rather than only on the time-based scheduler.
+
+        Returns:
+            int: Number of threshold records created or updated during this
+            call.  ``0`` when ``THRESHOLD_SYNC_ENABLED`` is disabled, when the
+            cloud is unreachable, or when the cloud returned no deltas.
+        """
+        if not EdgeConfig.THRESHOLD_SYNC_ENABLED:
+            return 0
+        try:
+            return self.threshold_sync_service.sync_from_cloud()
+        except Exception as exc:
+            LOGGER.warning("Threshold sync after telemetry ingest failed: %s", exc)
+            return 0

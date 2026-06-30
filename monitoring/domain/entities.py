@@ -66,6 +66,47 @@ class Threshold:
         self.respiratory_rate_max = respiratory_rate_max
         self.cloud_updated_at = cloud_updated_at
 
+    def is_violated_by(self, measurement: "Measurement") -> bool:
+        """Check if any vital sign in the measurement violates these thresholds."""
+        if measurement.heart_rate is not None:
+            if self.heart_rate_min is not None and measurement.heart_rate < self.heart_rate_min:
+                return True
+            if self.heart_rate_max is not None and measurement.heart_rate > self.heart_rate_max:
+                return True
+
+        if measurement.systolic is not None:
+            if self.systolic_min is not None and measurement.systolic < self.systolic_min:
+                return True
+            if self.systolic_max is not None and measurement.systolic > self.systolic_max:
+                return True
+
+        if measurement.diastolic is not None:
+            if self.diastolic_min is not None and measurement.diastolic < self.diastolic_min:
+                return True
+            if self.diastolic_max is not None and measurement.diastolic > self.diastolic_max:
+                return True
+
+        if measurement.temperature is not None:
+            if self.temperature_min is not None and measurement.temperature < self.temperature_min:
+                return True
+            if self.temperature_max is not None and measurement.temperature > self.temperature_max:
+                return True
+
+        if measurement.oxygen_saturation is not None:
+            if self.oxygen_saturation_min is not None and measurement.oxygen_saturation < self.oxygen_saturation_min:
+                return True
+            if self.oxygen_saturation_max is not None and measurement.oxygen_saturation > self.oxygen_saturation_max:
+                return True
+
+        if measurement.respiratory_rate is not None:
+            if self.respiratory_rate_min is not None and measurement.respiratory_rate < self.respiratory_rate_min:
+                return True
+            if self.respiratory_rate_max is not None and measurement.respiratory_rate > self.respiratory_rate_max:
+                return True
+
+        return False
+
+
 
 class Measurement:
     """Aggregate root representing a single vital-signs reading.

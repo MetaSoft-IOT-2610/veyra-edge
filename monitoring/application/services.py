@@ -13,6 +13,7 @@ from monitoring.domain.entities import Measurement
 from monitoring.domain.services import MeasurementService
 from monitoring.infrastructure.cloud_sync import MeasurementCloudGateway
 from monitoring.infrastructure.repositories import MeasurementRepository
+from monitoring.infrastructure.threshold_repository import ThresholdRepository
 from shared.infrastructure.config import EdgeConfig
 
 LOGGER = logging.getLogger(__name__)
@@ -40,6 +41,7 @@ class MeasurementApplicationService:
         """Initialise the service with its required collaborators."""
         self.measurement_repository = MeasurementRepository()
         self.device_repository = DeviceRepository()
+        self.threshold_repository = ThresholdRepository()
         self.measurement_service = MeasurementService()
         self.cloud_gateway = MeasurementCloudGateway()
         self.registry_sync_service = DeviceRegistrySyncApplicationService()
@@ -94,7 +96,10 @@ class MeasurementApplicationService:
         )
         saved = self.measurement_repository.save(measurement)
 
-        self._try_sync(saved, sync_registry=True)
+        threshold = self.threshold_repository.find_by_device_id(saved.device_id)
+        if threshold and threshold.is_violated_by(saved):
+            self._try_sync(saved, sync_registry=True)
+
         return saved
 
     def sync_pending(self, limit: int | None = None) -> int:

@@ -50,6 +50,14 @@ def test_pull_returns_none_when_thresholds_key_missing(gateway):
         assert gateway.pull(since=None) is None
 
 
+def test_pull_returns_none_when_response_is_not_json(gateway):
+    response = _mock_response()
+    response.json.side_effect = ValueError("not json")
+    with patch("monitoring.infrastructure.threshold_cloud_sync.gateway_cloud_auth_headers", return_value=AUTH_HEADERS), \
+         patch("requests.get", return_value=response):
+        assert gateway.pull(since=None) is None
+
+
 def test_pull_returns_none_when_thresholds_not_a_list(gateway):
     with patch("monitoring.infrastructure.threshold_cloud_sync.gateway_cloud_auth_headers", return_value=AUTH_HEADERS), \
          patch("requests.get", return_value=_mock_response(json_body={"thresholds": "bad"})):

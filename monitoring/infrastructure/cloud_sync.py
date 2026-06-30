@@ -22,6 +22,7 @@ LOGGER = logging.getLogger(__name__)
 
 # Backend endpoint that ingests vital-signs telemetry from the edge.
 MEASUREMENTS_PATH = "/measurements"
+MAX_ERROR_BODY_LENGTH = 300
 
 
 class MeasurementCloudGateway:
@@ -60,13 +61,13 @@ class MeasurementCloudGateway:
                 measurement.device_id,
             )
             return False
-        if not self._has_publishable_vitals(measurement):
+        if not self._has_publishable_data(measurement):
             LOGGER.debug(
-                "Cloud sync skipped for device %s: no vital signs in buffered reading",
+                "Cloud sync skipped for device %s: no publishable data in buffered reading",
                 measurement.device_id,
             )
             return False
-        headers["Content-Type"] = "application/json"
+        headers = {**headers, "Content-Type": "application/json"}
         try:
             response = requests.post(url, json=payload, headers=headers, timeout=self.timeout)
         except requests.RequestException as exc:
@@ -79,20 +80,38 @@ class MeasurementCloudGateway:
 
         LOGGER.warning(
             "Cloud rejected measurement for device %s: %s %s",
-            measurement.device_id, response.status_code, response.text,
+            measurement.device_id,
+            response.status_code,
+            self._response_error_summary(response),
         )
         return False
 
     @staticmethod
-    def _has_publishable_vitals(measurement: Measurement) -> bool:
-        """Cloud requires at least one vital sign (ambient counts as temperature)."""
-        if measurement.heart_rate is not None:
+    def _response_error_summary(response) -> str:
+        """Return a bounded response body for logs."""
+        body = getattr(response, "text", "") or ""
+        body = body.replace("\n", " ").replace("\r", " ").strip()
+        if len(body) > MAX_ERROR_BODY_LENGTH:
+            return body[:MAX_ERROR_BODY_LENGTH] + "..."
+        return body
+
+    @staticmethod
+    def _has_publishable_data(measurement: Measurement) -> bool:
+        """Cloud requires vitals or a GPS location for tracking devices."""
+        if any(
+            value is not None
+            for value in (
+                measurement.heart_rate,
+                measurement.oxygen_saturation,
+                measurement.temperature,
+                measurement.respiratory_rate,
+                measurement.ambient_temperature,
+            )
+        ):
             return True
-        if measurement.oxygen_saturation is not None:
+        if measurement.systolic is not None and measurement.diastolic is not None:
             return True
-        if measurement.temperature is not None:
-            return True
-        return measurement.ambient_temperature is not None
+        return measurement.latitude is not None and measurement.longitude is not None
 
     @staticmethod
     def _to_payload(measurement: Measurement, mac_address: str) -> dict:

@@ -54,7 +54,11 @@ class ThresholdCloudGateway:
             )
             return None
 
-        payload = response.json()
+        try:
+            payload = response.json()
+        except ValueError:
+            LOGGER.warning("Threshold sync response was not valid JSON")
+            return None
         thresholds = payload.get("thresholds")
         if not isinstance(thresholds, list):
             LOGGER.warning("Threshold sync response missing 'thresholds' array")

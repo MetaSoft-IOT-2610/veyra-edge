@@ -93,6 +93,18 @@ class MeasurementService:
         MeasurementService._validate_location_pair(latitude, longitude)
         validated_diagnostics = MeasurementService._validate_diagnostics(diagnostics)
         systolic, diastolic = MeasurementService._validate_blood_pressure(systolic, diastolic)
+        MeasurementService._validate_has_useful_payload(
+            device_type=device_type,
+            heart_rate=heart_rate,
+            systolic=systolic,
+            diastolic=diastolic,
+            temperature=temperature,
+            oxygen_saturation=oxygen_saturation,
+            respiratory_rate=respiratory_rate,
+            ambient_temperature=ambient_temperature,
+            latitude=latitude,
+            longitude=longitude,
+        )
 
         return Measurement(
             device_id=device_id,
@@ -165,6 +177,35 @@ class MeasurementService:
         if systolic <= diastolic:
             raise ValueError("systolic must be greater than diastolic")
         return systolic, diastolic
+
+    @staticmethod
+    def _validate_has_useful_payload(
+            device_type,
+            heart_rate,
+            systolic,
+            diastolic,
+            temperature,
+            oxygen_saturation,
+            respiratory_rate,
+            ambient_temperature,
+            latitude,
+            longitude) -> None:
+        """Require useful telemetry for the device category."""
+        has_vital = any(
+            value is not None
+            for value in (
+                heart_rate,
+                temperature,
+                oxygen_saturation,
+                respiratory_rate,
+                ambient_temperature,
+            )
+        ) or (systolic is not None and diastolic is not None)
+        has_location = latitude is not None and longitude is not None
+        if str(device_type).strip().upper() == "GPS" and has_location:
+            return
+        if not has_vital:
+            raise ValueError("At least one vital sign or GPS location must be provided")
 
     @staticmethod
     def _validate_location_pair(latitude, longitude):

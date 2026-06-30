@@ -79,9 +79,9 @@ class Measurement(Model):
     """
 
     id = AutoField()
-    device_id = CharField()
+    device_id = CharField(index=True)
     device_type = CharField()
-    timestamp = DateTimeField()
+    timestamp = DateTimeField(index=True)
     heart_rate = IntegerField(null=True)
     systolic = IntegerField(null=True)
     diastolic = IntegerField(null=True)
@@ -94,7 +94,7 @@ class Measurement(Model):
     satellite_count = IntegerField(null=True)
     satellites_in_view = IntegerField(null=True)
     diagnostics_json = TextField(null=True)
-    synced = BooleanField(default=False)
+    synced = BooleanField(default=False, index=True)
     created_at = DateTimeField()
 
     class Meta:
@@ -102,3 +102,7 @@ class Measurement(Model):
 
         database = db
         table_name = 'measurements'
+        indexes = (
+            (("synced", "id"), False),
+            (("device_id", "timestamp"), False),
+        )

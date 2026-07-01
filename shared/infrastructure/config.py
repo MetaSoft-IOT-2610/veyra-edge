@@ -28,6 +28,8 @@ The variables mirror the deployment contract documented for the Edge Server:
 - ``REGISTRY_SYNC_INTERVAL_SECONDS``: interval between background registry sync polls.
 - ``THRESHOLD_SYNC_ENABLED``: pull vital-sign alert thresholds from the cloud.
 - ``THRESHOLD_SYNC_INTERVAL_SECONDS``: interval between background threshold sync polls.
+- ``HEART_RATE_AVERAGE_WINDOW_SECONDS``: seconds of normal pulse readings to
+  aggregate before syncing a single average to the cloud.
 """
 import os
 
@@ -70,3 +72,4 @@ class EdgeConfig:
     REGISTRY_SYNC_INTERVAL_SECONDS: int = int(os.getenv("REGISTRY_SYNC_INTERVAL_SECONDS", "300"))
     THRESHOLD_SYNC_ENABLED: bool = os.getenv("THRESHOLD_SYNC_ENABLED", "false").lower() == "true"
     THRESHOLD_SYNC_INTERVAL_SECONDS: int = int(os.getenv("THRESHOLD_SYNC_INTERVAL_SECONDS", "300"))
+    HEART_RATE_AVERAGE_WINDOW_SECONDS: int = int(os.getenv("HEART_RATE_AVERAGE_WINDOW_SECONDS", "300"))

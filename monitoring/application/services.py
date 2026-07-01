@@ -5,6 +5,7 @@ They orchestrate use-cases by coordinating domain services, domain entities,
 repositories and outbound gateways without containing domain logic themselves.
 """
 import logging
+import time
 
 from iam.application.registry_sync_service import DeviceRegistrySyncApplicationService
 from iam.domain.entities import Device
@@ -14,9 +15,40 @@ from monitoring.domain.entities import Measurement
 from monitoring.domain.services import MeasurementService
 from monitoring.infrastructure.cloud_sync import MeasurementCloudGateway
 from monitoring.infrastructure.repositories import MeasurementRepository
+from monitoring.infrastructure.threshold_repository import ThresholdRepository
 from shared.infrastructure.config import EdgeConfig
 
 LOGGER = logging.getLogger(__name__)
+
+
+class HeartRateAverageWindow:
+    """In-memory pulse averaging window for one vital-signs device."""
+
+    def __init__(self, measurement: Measurement, now_monotonic: float, threshold_checked: bool):
+        self.device_id = measurement.device_id
+        self.device_type = measurement.device_type
+        self.started_at_monotonic = now_monotonic
+        self.latest_timestamp = measurement.timestamp
+        self.threshold_checked = threshold_checked
+        self.total = 0
+        self.count = 0
+        self.add(measurement)
+
+    def add(self, measurement: Measurement) -> None:
+        self.total += measurement.heart_rate
+        self.count += 1
+        self.latest_timestamp = measurement.timestamp
+
+    def is_ready(self, now_monotonic: float, window_seconds: int) -> bool:
+        return now_monotonic - self.started_at_monotonic >= window_seconds
+
+    def to_average_measurement(self) -> Measurement:
+        return Measurement(
+            device_id=self.device_id,
+            device_type=self.device_type,
+            timestamp=self.latest_timestamp,
+            heart_rate=round(self.total / self.count),
+        )
 
 
 class MeasurementApplicationService:
@@ -45,6 +77,8 @@ class MeasurementApplicationService:
         self.cloud_gateway = MeasurementCloudGateway()
         self.registry_sync_service = DeviceRegistrySyncApplicationService()
         self.threshold_sync_service = ThresholdSyncApplicationService()
+        self.threshold_repository = ThresholdRepository()
+        self.heart_rate_windows = {}
         self.last_thresholds_applied = 0
 
     def create_measurement(
@@ -95,11 +129,23 @@ class MeasurementApplicationService:
             timestamp,
             diagnostics,
         )
-        saved = self.measurement_repository.save(measurement)
-
-        self._try_sync(saved, sync_registry=True)
         self.last_thresholds_applied = self._sync_thresholds_from_cloud()
-        return saved
+
+        threshold = self.threshold_repository.find_by_device_id(measurement.device_id)
+
+        if self._should_publish_immediately(measurement, threshold):
+            self.heart_rate_windows.pop(measurement.device_id, None)
+            return self._save_and_sync(measurement, immediate_alert=True)
+
+        averaged = self._try_create_heart_rate_average(measurement, threshold_checked=threshold is not None)
+        if averaged is None:
+            measurement.synced = False
+            measurement.average_pending = True
+            measurement.averaged = False
+            measurement.immediate_alert = False
+            return measurement
+
+        return self._save_and_sync(averaged, averaged=True)
 
     def sync_pending(self, limit: int | None = None) -> int:
         """Replay unsynced measurements up to ``limit`` (defaults to config batch size)."""
@@ -144,6 +190,60 @@ class MeasurementApplicationService:
             if sync_registry:
                 self._sync_registry_from_cloud()
         return published
+
+    def _save_and_sync(
+            self,
+            measurement: Measurement,
+            *,
+            averaged: bool = False,
+            immediate_alert: bool = False) -> Measurement:
+        """Persist a publishable measurement and attempt cloud synchronization."""
+        saved = self.measurement_repository.save(measurement)
+        self._try_sync(saved, sync_registry=True)
+        saved.average_pending = False
+        saved.averaged = averaged
+        saved.immediate_alert = immediate_alert
+        return saved
+
+    def _should_publish_immediately(self, measurement: Measurement, threshold) -> bool:
+        """Return true when the reading must bypass averaging."""
+        if measurement.heart_rate is None:
+            return True
+
+        if threshold is None:
+            return False
+
+        if threshold.heart_rate_min is not None and measurement.heart_rate < threshold.heart_rate_min:
+            return True
+        return threshold.heart_rate_max is not None and measurement.heart_rate > threshold.heart_rate_max
+
+    def _try_create_heart_rate_average(
+            self,
+            measurement: Measurement,
+            *,
+            threshold_checked: bool) -> Measurement | None:
+        """Accumulate normal pulse readings and emit an average when the window matures."""
+        window_seconds = EdgeConfig.HEART_RATE_AVERAGE_WINDOW_SECONDS
+        if window_seconds <= 0:
+            return measurement
+
+        now = time.monotonic()
+        window = self.heart_rate_windows.get(measurement.device_id)
+        if window is None or window.threshold_checked != threshold_checked:
+            self.heart_rate_windows[measurement.device_id] = HeartRateAverageWindow(
+                measurement,
+                now,
+                threshold_checked,
+            )
+            return None
+
+        window.add(measurement)
+        if not window.is_ready(now, window_seconds):
+            return None
+
+        averaged = window.to_average_measurement()
+        self.heart_rate_windows.pop(measurement.device_id, None)
+        return averaged
 
     def _sync_registry_from_cloud(self) -> None:
         if not EdgeConfig.REGISTRY_SYNC_ENABLED:

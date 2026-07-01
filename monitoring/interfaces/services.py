@@ -92,6 +92,12 @@ def create_measurement():
       least one threshold record was created or updated as a side-effect of
       this telemetry request; ``false`` means the local cache was already up
       to date (or threshold sync is disabled / the cloud was unreachable).
+    - ``average_pending`` (bool): Whether a normal pulse reading was accepted
+      but held locally until the five-minute average window matures.
+    - ``averaged`` (bool): Whether this response represents a published pulse
+      average instead of a raw reading.
+    - ``immediate_alert`` (bool): Whether the raw pulse exceeded cached
+      thresholds and bypassed averaging.
     """
     device, auth_error = resolve_authenticated_device()
     if auth_error:
@@ -141,6 +147,9 @@ def create_measurement():
             "diagnostics": measurement.diagnostics,
             "synced": measurement.synced,
             "thresholds_updated": measurement_service.last_thresholds_applied > 0,
+            "average_pending": getattr(measurement, "average_pending", False),
+            "averaged": getattr(measurement, "averaged", False),
+            "immediate_alert": getattr(measurement, "immediate_alert", False),
         }), 201
     except ValueError as e:
         device_id = device.device_id if device else "—"
